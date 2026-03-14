@@ -432,6 +432,49 @@ Rodar o backup em uma VPS ou em um PC/servidor de casa é uma boa opção quando
 - Ter mais estabilidade de rede para o upload.
 - Centralizar logs/monitoramento.
 
+Além disso, muitos provedores de host de Minecraft oferecem um painel com **automação/agendamento** (ex.: “tarefas”/“cron”/“scheduler”). Nesse cenário, você consegue:
+
+ - Rodar o backup em um **horário fixo** todo dia.
+ - Opcionalmente executar comandos antes/depois (depende do painel), por exemplo:
+   - Enviar avisos no servidor.
+   - Fazer um restart em horário controlado.
+ 
+ Se o seu painel permitir rodar comandos no console do Minecraft, uma estratégia comum para aumentar a consistência do backup é agendar os comandos `save-off` e `save-on` ao redor da janela do backup:
+ 
+ - Rodar `save-off` pouco antes do backup iniciar.
+ - (Recomendado) logo após, rodar `save-all` (ou `save-all flush`, quando disponível) para forçar a gravação do mundo em disco.
+ - Rodar `save-on` um tempo depois.
+ 
+ Como esses comandos funcionam:
+ 
+ - `save-off`
+   - Desativa o salvamento automático do mundo no disco.
+   - O mundo continua “mudando” normalmente (entidades/chunks), mas as alterações ficam mais concentradas em memória até você forçar um save.
+   - Ajuda a reduzir a chance de você copiar arquivos enquanto o servidor está escrevendo neles.
+ - `save-on`
+   - Reativa o salvamento automático (volta ao comportamento normal).
+ 
+ Cuidados importantes:
+ 
+ - Se o servidor cair/crashar enquanto estiver em `save-off`, você pode perder alterações desde o último save.
+ - Esses comandos exigem acesso ao console/RCON/operação equivalente (nem toda host expõe isso na automação).
+ - Isso é uma melhoria opcional de consistência; o script não depende disso para funcionar.
+ 
+ Esse intervalo depende principalmente da duração do **sync SFTP -> local** (`rclone sync`):
+ 
+ - Quando o mundo não mudou muito desde o último backup, o `sync` tende a ser bem rápido.
+ - Quando muitos chunks/arquivos grandes mudaram recentemente, o `sync` pode demorar mais.
+ 
+ Observação: o único passo que realmente se beneficia desses comandos é o **sync**. As etapas seguintes (ZIP/upload/rotação) não dependem disso. Mesmo sem `save-off`/`save-on`, o processo já é bem resiliente, mas o backup pode ficar menos consistente em momentos de escrita intensa.
+ 
+ Isso “comba” bem com este projeto: você mantém o **backup fora da host** (via SFTP + `rclone`) e usa o painel apenas como gatilho de execução.
+
+ ### Integrações (opcional)
+
+Em teoria, também seria possível integrar o backup com o servidor por outros meios (por exemplo, um plugin que “sinalize” o início/fim do backup, ou um endpoint HTTP exposto pela host). Eu não considero isso um requisito do projeto.
+
+O caminho mais “limpo” seria uma **API do lado da host** (ou do painel) para acionar um snapshot/flush/backup consistente do mundo antes do `rclone sync`, mas atualmente isso varia muito entre provedores.
+
 Pontos de atenção:
 
 - Garanta espaço suficiente no disco para `sync_dir` + o `.zip`.
