@@ -52,7 +52,11 @@ function Invoke-Rclone {
 
         $code = $LASTEXITCODE
         if ($code -ne 0) {
-            Stop-Backup -ExitCode $ExitCodes.Rclone -Message "Falha ao executar: $pretty (exit code $code). Causas comuns: remote não existe no 'rclone config', credenciais inválidas, permissão negada, rede instável, ou caminho remoto incorreto."
+            $extra = ''
+            if (-not [string]::IsNullOrWhiteSpace($rcloneLog)) {
+                $extra = " Consulte o log do rclone em: $rcloneLog"
+            }
+            Stop-Backup -ExitCode $ExitCodes.Rclone -Message "Falha ao executar: $pretty (exit code $code). Causas comuns: arquivo mudando durante o sync (ex.: 'corrupted on transfer: sizes differ' ao copiar .mca), rede instável/intermitente, limites da host, permissões, ou remote/caminho incorreto no rclone config.$extra"
         }
     }
 }

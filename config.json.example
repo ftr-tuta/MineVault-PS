@@ -3,7 +3,8 @@
     "remote": "sftp_bedhost:",
     "exclude": [
       "logs/**",
-      "cache/**"
+      "cache/**",
+      "plugins/spark/tmp/**"
     ]
   },
   "work": {

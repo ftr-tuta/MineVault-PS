@@ -10,6 +10,20 @@ function ConvertTo-DiscordColor {
     }
 }
 
+function ConvertTo-DiscordTextSanitized {
+    param(
+        [Parameter(Mandatory=$true)][AllowEmptyString()][string]$Text
+    )
+
+    if ($null -eq $Text) { return '' }
+
+    $t = [string]$Text
+    $t = $t -replace "\r\n", "\n"
+    $t = $t -replace "\r", "\n"
+    $t = [regex]::Replace($t, "[\x00-\x08\x0B\x0C\x0E-\x1F]", '')
+    return $t
+}
+
 function ConvertTo-DiscordTextTruncated {
     param(
         [Parameter(Mandatory=$true)][AllowEmptyString()][string]$Text,
@@ -17,8 +31,10 @@ function ConvertTo-DiscordTextTruncated {
     )
     if ($MaxLength -le 0) { return '' }
     if ($null -eq $Text) { return '' }
-    if ($Text.Length -le $MaxLength) { return $Text }
-    return ($Text.Substring(0, [Math]::Max(0, $MaxLength - 3)) + '...')
+
+    $t = ConvertTo-DiscordTextSanitized -Text $Text
+    if ($t.Length -le $MaxLength) { return $t }
+    return ($t.Substring(0, [Math]::Max(0, $MaxLength - 3)) + '...')
 }
 
 function Get-DiscordSettings {
@@ -145,12 +161,22 @@ function Send-DiscordWebhook {
         } catch {
             $statusCode = $null
             $retryAfterSeconds = $null
+            $respBody = $null
 
             $resp = $null
             if ($_.Exception -and $_.Exception.Response) {
                 $resp = $_.Exception.Response
                 try {
                     $statusCode = [int]$resp.StatusCode
+                } catch { }
+                try {
+                    if ($statusCode -eq 400) {
+                        $stream = $resp.GetResponseStream()
+                        if ($stream) {
+                            $reader = New-Object System.IO.StreamReader($stream)
+                            $respBody = $reader.ReadToEnd()
+                        }
+                    }
                 } catch { }
                 try {
                     $ra = $resp.Headers['Retry-After']
@@ -169,6 +195,9 @@ function Send-DiscordWebhook {
             $suffix = ""
             if ($null -ne $statusCode) { $suffix = " (HTTP $statusCode)" }
             $msg = "Discord webhook falhou ({0}){1}: {2}" -f $Context, $suffix, $($_.Exception.Message)
+            if ($statusCode -eq 400 -and -not [string]::IsNullOrWhiteSpace($respBody)) {
+                $msg = $msg + " | Response: " + (ConvertTo-DiscordTextTruncated -Text $respBody -MaxLength 300)
+            }
             if ($Discord.FailBackupOnDiscordError) {
                 throw $msg
             } else {
