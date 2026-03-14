@@ -11,21 +11,22 @@ Este repositório/arquivo contém um script PowerShell (`backup-mc.ps1`) para:
 
 - [Por que esse script existe](#por-que-esse-script-existe)
 - [Requisitos](#requisitos)
-- [Configuração (`config.json`)](#configuracao-configjson)
-  - [Notificações no Discord (Webhook)](#notificacoes-no-discord-webhook)
-  - [Compressão do ZIP (7-Zip)](#compressao-do-zip-7-zip)
-  - [Retenção (quantas cópias manter)](#retencao-quantas-copias-manter)
-  - [Destinos suportados (provider)](#destinos-suportados-provider)
+- [Configuração (`config.json`)](#configuracao-config-json)
+  - [Notificações no Discord (Webhook)](#discord-webhook)
+  - [Compressão do ZIP (7-Zip)](#zip-7-zip)
+  - [Retenção (quantas cópias manter)](#retencao)
+  - [Destinos suportados (provider)](#destinos-provider)
 - [Como usar](#como-usar)
-- [Rodando em VPS ou PC de casa (automação)](#rodando-em-vps-ou-pc-de-casa-automacao)
-- [Onde ficam os logs](#onde-ficam-os-logs)
-- [Exit codes (para Agendador de Tarefas / monitoramento)](#exit-codes-para-agendador-de-tarefas--monitoramento)
-- [Como funciona (visão geral)](#como-funciona-visao-geral)
-- [Por que usar `lock`](#por-que-usar-lock)
-- [Por que usar retry](#por-que-usar-retry)
-- [Limitações importantes (Minecraft)](#limitacoes-importantes-minecraft)
+- [Rodando em VPS ou PC de casa (automação)](#automacao)
+- [Onde ficam os logs](#logs)
+- [Exit codes (para Agendador de Tarefas / monitoramento)](#exit-codes)
+- [Como funciona (visão geral)](#visao-geral)
+- [Por que usar `lock`](#lock)
+- [Por que usar retry](#retry)
+- [Limitações importantes (Minecraft)](#limitacoes)
 - [Troubleshooting](#troubleshooting)
 
+<a id="por-que-esse-script-existe"></a>
 ## ❓ Por que esse script existe
 
 Backups de servidor de Minecraft costumam falhar por motivos comuns:
@@ -42,6 +43,7 @@ Este script foi ajustado para ser **mais resiliente e auditável**:
 - **Lock**: evita duas execuções ao mesmo tempo.
 - **Log em arquivo**: facilita auditoria e troubleshooting.
 
+<a id="requisitos"></a>
 ## ✅ Requisitos
 
 - Windows (PowerShell) ou Linux (PowerShell 7 `pwsh`).
@@ -53,6 +55,7 @@ Este script foi ajustado para ser **mais resiliente e auditável**:
   - Um remote SFTP (ex.: `sftp_bedhost:`)
   - Um remote de destino (ex.: `backblaze:` / `gdrive:` / `s3remote:`)
 
+<a id="configuracao-config-json"></a>
 ## ⚙️ Configuração (`config.json`)
 
 O script lê um arquivo `config.json` na mesma pasta do `backup-mc.ps1`.
@@ -135,6 +138,7 @@ Seção opcional para enviar notificações via webhook do Discord.
 
 </details>
 
+<a id="discord-webhook"></a>
 ## 🔔 Notificações no Discord (Webhook)
 
 O script suporta **enviar notificações para o Discord** via Webhook.
@@ -255,6 +259,7 @@ Exemplo mais completo (ainda apenas o bloco `discord`):
   - `false` (padrão): se o Discord falhar, o backup continua e só registra um `WARN`.
   - `true`: se o Discord falhar, o script falha também.
 
+<a id="zip-7-zip"></a>
 ### Compressão do ZIP (7-Zip)
 
 O nível de compressão é controlado por `zip.compression` e é repassado ao 7-Zip como `-mx=N`.
@@ -278,6 +283,7 @@ Teste de integridade do ZIP:
 
 Observação: pular o teste deixa o backup mais rápido, mas você pode só descobrir um ZIP corrompido depois (ex.: no restore).
 
+<a id="retencao"></a>
 ### Retenção (quantas cópias manter)
 
 Você pode controlar separadamente quantas cópias manter:
@@ -311,6 +317,7 @@ Exemplos comuns:
 - Manter **7 local** e **0 remoto**:
   - `localKeep = 7`, `remoteKeep = 0`
 
+<a id="destinos-provider"></a>
 ### Destinos suportados (provider)
 
 Em `destination.provider`, escolha um dos valores:
@@ -416,6 +423,7 @@ pwsh ./backup-mc.ps1 -IgnoreLock
 - Agende no **Agendador de Tarefas do Windows**.
 - Não rode manualmente enquanto o agendador pode disparar (o lock vai bloquear e o script irá falhar de propósito).
 
+<a id="automacao"></a>
 ## 🖥️ Rodando em VPS ou PC de casa (automação)
 
 Rodar o backup em uma VPS ou em um PC/servidor de casa é uma boa opção quando você quer:
@@ -524,6 +532,7 @@ sudo systemctl start backup-minecraft.service
 
 </details>
 
+<a id="logs"></a>
 ## 🧾 Onde ficam os logs
 
 Os logs são gravados por exemplo em:
@@ -536,6 +545,7 @@ Esses logs registram:
 - Tentativas e falhas de comandos do `rclone`.
 - Mensagens de erro com causa provável.
 
+<a id="exit-codes"></a>
 ## 🧩 Exit codes (para Agendador de Tarefas / monitoramento)
 
 O script retorna códigos de saída específicos. Isso é útil para você diferenciar falhas no Agendador de Tarefas.
@@ -548,6 +558,7 @@ O script retorna códigos de saída específicos. Isso é útil para você difer
 - **10**: Falha do `rclone` (sync/list/upload/delete).
 - **11**: Falha do 7-Zip (compactação/teste do ZIP).
 
+<a id="visao-geral"></a>
 ## 🧠 Como funciona (visão geral)
 
 <details>
@@ -580,6 +591,7 @@ O script retorna códigos de saída específicos. Isso é útil para você difer
 
 </details>
 
+<a id="lock"></a>
 ## 🔒 Por que usar `lock`
 
 <details>
@@ -595,6 +607,7 @@ O lock é propositalmente “chato”: se existir, o script falha com mensagem c
 
 </details>
 
+<a id="retry"></a>
 ## 🔁 Por que usar retry
 
 <details>
@@ -607,6 +620,7 @@ O `rclone` já tem retries internos, mas o script também:
 
 </details>
 
+<a id="limitacoes"></a>
 ## ⛔ Limitações importantes (Minecraft)
 
 <details>
@@ -620,6 +634,7 @@ Se você tiver controle do servidor, o ideal é pausar/forçar flush do save ant
 
 </details>
 
+<a id="troubleshooting"></a>
 ## 🧯 Troubleshooting
 
 <details>
