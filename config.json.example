@@ -9,10 +9,10 @@
   "work": {
     "tempDir": "G:/BackupsMC",
     "syncDirName": "sync_dir",
-    "localArchiveDir": "G:/BackupsMC/archives",
+    "localArchiveDir": "G:/BackupsMC/archives"
   },
   "retention": {
-    "localKeep": 0,
+    "localKeep": 1,
     "remoteKeep": 7
   },
   "zip": {
@@ -23,6 +23,38 @@
     "sevenZip": {
       "windowsPath": "C:/Program Files/7-Zip/7z.exe",
       "linuxCommand": "7z"
+    }
+  },
+  "discord": {
+    "enabled": false,
+    "webhooks": {
+      "normalUrl": "",
+      "alertUrl": ""
+    },
+    "identity": {
+      "username": "Backup Minecraft",
+      "avatarUrl": ""
+    },
+    "notifications": {
+      "start": { "enabled": true },
+      "success": { "enabled": true },
+      "failure": { "enabled": true }
+    },
+    "mentions": {
+      "onFailure": {
+        "here": true,
+        "roleId": ""
+      }
+    },
+    "heartbeat": {
+      "enabled": true,
+      "intervalSeconds": 300
+    },
+    "failure": {
+      "includeLastLogLines": 10
+    },
+    "behavior": {
+      "failBackupOnDiscordError": false
     }
   },
   "destination": {
