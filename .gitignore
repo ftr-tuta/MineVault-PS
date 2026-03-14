@@ -1,0 +1,16 @@
+
+# Config local (contém caminhos/segredos). Use config.json.example como base.
+config.json
+
+# Artefatos gerados pelo backup
+*.log
+backup_minecraft_*.zip
+
+# Pastas locais comuns (ajuste se você usar outros caminhos)
+logs/
+archives/
+
+# Temporários
+*.tmp
+*.partial
+

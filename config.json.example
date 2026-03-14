@@ -1,0 +1,48 @@
+{
+  "source": {
+    "remote": "sftp_bedhost:",
+    "exclude": [
+      "logs/**",
+      "cache/**"
+    ]
+  },
+  "work": {
+    "tempDir": "G:/BackupsMC",
+    "syncDirName": "sync_dir",
+    "localArchiveDir": "G:/BackupsMC/archives",
+  },
+  "retention": {
+    "localKeep": 0,
+    "remoteKeep": 7
+  },
+  "zip": {
+    "compression": 2,
+    "skipTest": false
+  },
+  "dependencies": {
+    "sevenZip": {
+      "windowsPath": "C:/Program Files/7-Zip/7z.exe",
+      "linuxCommand": "7z"
+    }
+  },
+  "destination": {
+    "provider": "b2",
+
+    "b2": {
+      "remote": "backblaze:",
+      "bucket": "",
+      "prefix": "Backups/Minecraft"
+    },
+
+    "gdrive": {
+      "remote": "gdrive:",
+      "folder": "Backups/Minecraft"
+    },
+
+    "s3": {
+      "remote": "s3remote:",
+      "bucket": "",
+      "prefix": "Backups/Minecraft"
+    }
+  }
+}
