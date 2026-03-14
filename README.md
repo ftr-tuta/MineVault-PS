@@ -118,12 +118,53 @@ Por isso, quando `provider=b2`, o `config.json` **obriga** preencher `destinatio
 
 ## Como usar
 
-É necessário habilitar a execução de scripts no PowerShell, por padrão o Windows bloqueia a execução de scripts, para isso:
+O Windows pode bloquear a execução de scripts `.ps1` dependendo da política de execução (ExecutionPolicy).
 
-1. Abra o PowerShell como Administrador.
-2. Rode o script:
+### Windows: liberar execução sem precisar de Admin (recomendado)
 
-### Windows
+Você pode liberar para o **seu usuário** (sem elevar privilégios) com:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
+
+Isso é **persistente** para o seu usuário e evita ter que usar PowerShell como Administrador.
+
+Opcional (como Administrador, efeito mais amplo):
+
+Se você preferir configurar a máquina (ex.: para rodar via serviços/tarefas com outros usuários), rode PowerShell como Administrador e execute:
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Force
+```
+
+Se o arquivo do script estiver “bloqueado” (ex.: baixado da internet), rode uma vez:
+
+```powershell
+Unblock-File -Path .\backup-mc.ps1
+```
+
+### Windows: alternativa pontual (não muda configuração)
+
+Se você não quiser alterar a ExecutionPolicy permanentemente, pode executar com `-ExecutionPolicy Bypass` (vale só para aquela execução).
+
+Depois disso, você pode rodar o script diretamente.
+
+### Windows (mais simples)
+
+No PowerShell, na pasta do projeto:
+
+```powershell
+.\backup-mc.ps1
+```
+
+Se você estiver usando PowerShell 7 (`pwsh`), também funciona:
+
+```powershell
+pwsh .\backup-mc.ps1
+```
+
+Se preferir não alterar a ExecutionPolicy permanentemente, continue usando `-ExecutionPolicy Bypass` (vale só para aquela execução):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File "backup-mc.ps1"
