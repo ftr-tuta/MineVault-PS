@@ -9,22 +9,22 @@ Este repositório/arquivo contém um script PowerShell (`backup-mc.ps1`) para:
 
 ## 📌 Índice
 
-- [Por que esse script existe](#-por-que-esse-script-existe)
-- [Requisitos](#-requisitos)
-- [Configuração (`config.json`)](#-configuração-configjson)
-  - [Notificações no Discord (Webhook)](#-notificações-no-discord-webhook)
-  - [Compressão do ZIP (7-Zip)](#compressão-do-zip-7-zip)
-  - [Retenção (quantas cópias manter)](#retenção-quantas-cópias-manter)
+- [Por que esse script existe](#por-que-esse-script-existe)
+- [Requisitos](#requisitos)
+- [Configuração (`config.json`)](#configuracao-configjson)
+  - [Notificações no Discord (Webhook)](#notificacoes-no-discord-webhook)
+  - [Compressão do ZIP (7-Zip)](#compressao-do-zip-7-zip)
+  - [Retenção (quantas cópias manter)](#retencao-quantas-copias-manter)
   - [Destinos suportados (provider)](#destinos-suportados-provider)
-- [Como usar](#-como-usar)
-- [Rodando em VPS ou PC de casa (automação)](#-rodando-em-vps-ou-pc-de-casa-automação)
-- [Onde ficam os logs](#-onde-ficam-os-logs)
-- [Exit codes (para Agendador de Tarefas / monitoramento)](#-exit-codes-para-agendador-de-tarefas--monitoramento)
-- [Como funciona (visão geral)](#-como-funciona-visão-geral)
-- [Por que usar `lock`](#-por-que-usar-lock)
-- [Por que usar retry](#-por-que-usar-retry)
-- [Limitações importantes (Minecraft)](#-limitações-importantes-minecraft)
-- [Troubleshooting](#-troubleshooting)
+- [Como usar](#como-usar)
+- [Rodando em VPS ou PC de casa (automação)](#rodando-em-vps-ou-pc-de-casa-automacao)
+- [Onde ficam os logs](#onde-ficam-os-logs)
+- [Exit codes (para Agendador de Tarefas / monitoramento)](#exit-codes-para-agendador-de-tarefas--monitoramento)
+- [Como funciona (visão geral)](#como-funciona-visao-geral)
+- [Por que usar `lock`](#por-que-usar-lock)
+- [Por que usar retry](#por-que-usar-retry)
+- [Limitações importantes (Minecraft)](#limitacoes-importantes-minecraft)
+- [Troubleshooting](#troubleshooting)
 
 ## ❓ Por que esse script existe
 
