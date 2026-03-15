@@ -14,7 +14,7 @@ function Write-Log {
         [ValidateSet('INFO','WARN','ERROR')][string]$Level = 'INFO'
     )
     $line = "[{0}] [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
-    Add-Content -Path $LogPath -Value $line
+    Add-Content -Path $LogPath -Value $line -Encoding utf8
     if ($Level -eq 'ERROR') {
         Write-Host $Message -ForegroundColor Red
     }
@@ -26,7 +26,7 @@ function Assert-Executable {
         [Parameter(Mandatory=$true)][string]$Path
     )
     if (!(Test-Path $Path)) {
-        Stop-Backup -ExitCode $ExitCodes.Dependency -Message "Dependência ausente: $Name não foi encontrado em '$Path'. Instale/ajuste a configuração (ex.: reinstale o 7-Zip ou corrija a variável 'Caminho7Zip'). Sem isso, o backup não pode ser compactado com segurança."
+        Stop-Backup -ExitCode $ExitCodes.Dependency -Message "Dependencia ausente: $Name nao foi encontrado em '$Path'. Instale/ajuste a configuracao (ex.: reinstale o 7-Zip ou corrija a variavel 'Caminho7Zip'). Sem isso, o backup nao pode ser compactado com seguranca."
     }
 }
 
@@ -34,7 +34,7 @@ function Assert-Command {
     param([Parameter(Mandatory=$true)][string]$Name)
     $cmd = Get-Command $Name -ErrorAction SilentlyContinue
     if (-not $cmd) {
-        Stop-Backup -ExitCode $ExitCodes.Dependency -Message "Dependência ausente: comando '$Name' não encontrado no PATH. Instale o rclone e garanta que 'rclone version' funciona no mesmo PowerShell que executa o script (incluindo no Agendador de Tarefas)."
+        Stop-Backup -ExitCode $ExitCodes.Dependency -Message "Dependencia ausente: comando '$Name' nao encontrado no PATH. Instale o rclone e garanta que 'rclone version' funciona no mesmo PowerShell que executa o script (incluindo no Agendador de Tarefas)."
     }
 }
 
@@ -53,6 +53,27 @@ function Invoke-WithRetry {
         } catch {
             Write-Log "$ActionName falhou: $($_.Exception.Message)" 'WARN'
             if ($attempt -eq $MaxAttempts) { throw }
+
+            try {
+                $getSettings = Get-Command -Name Get-DiscordRuntimeSettings -ErrorAction SilentlyContinue
+                $sendStage = Get-Command -Name Send-DiscordStageEvent -ErrorAction SilentlyContinue
+                if ($getSettings -and $sendStage) {
+                    $ds = Get-DiscordRuntimeSettings
+                    if ($ds -and $ds.Enabled) {
+                        $errText = $($_.Exception.Message)
+                        $errText = ConvertTo-DiscordTextTruncated -Text $errText -MaxLength 900
+                        $actionText = ConvertTo-DiscordTextTruncated -Text $ActionName -MaxLength 800
+                        $fields = @(
+                            @{ name = 'Action'; value = $actionText; inline = $false },
+                            @{ name = 'Attempt'; value = "$attempt/$MaxAttempts"; inline = $true },
+                            @{ name = 'Next attempt'; value = "in ${SleepSeconds}s"; inline = $true },
+                            @{ name = 'Error'; value = $errText; inline = $false }
+                        )
+                        Send-DiscordStageEvent -Discord $ds -Kind 'retry' -Title 'Backup Minecraft - Retry' -Color 'red' -Description 'A step failed and will be retried.' -Fields $fields -Alert
+                    }
+                }
+            } catch { }
+
             Start-Sleep -Seconds $SleepSeconds
         }
     }
@@ -66,7 +87,7 @@ function Get-LastLogLines {
     if ($Tail -le 0) { return '' }
     if (!(Test-Path $Path)) { return '' }
     try {
-        $lines = Get-Content -Path $Path -Tail $Tail -ErrorAction Stop
+        $lines = Get-Content -Path $Path -Tail $Tail -Encoding utf8 -ErrorAction Stop
         return ($lines -join "`n")
     } catch {
         return ''

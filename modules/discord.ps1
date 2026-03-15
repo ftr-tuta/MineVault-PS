@@ -84,10 +84,6 @@ function Get-DiscordSettings {
     }
     if ($heartbeatIntervalSeconds -lt 1) { $heartbeatIntervalSeconds = 1 }
 
-    $includeLastLogLines = 25
-    if ($d -and $d.failure -and ($null -ne $d.failure.includeLastLogLines)) { $includeLastLogLines = [int]$d.failure.includeLastLogLines }
-    if ($includeLastLogLines -lt 0) { $includeLastLogLines = 0 }
-
     $failBackupOnDiscordError = $false
     if ($d -and $d.behavior -and ($null -ne $d.behavior.failBackupOnDiscordError)) { $failBackupOnDiscordError = [bool]$d.behavior.failBackupOnDiscordError }
 
@@ -104,7 +100,6 @@ function Get-DiscordSettings {
         MentionRoleIdOnFailure = $mentionRoleId
         HeartbeatEnabled = $heartbeatEnabled
         HeartbeatIntervalSeconds = $heartbeatIntervalSeconds
-        FailureIncludeLastLogLines = $includeLastLogLines
         FailBackupOnDiscordError = $failBackupOnDiscordError
     }
 }
@@ -153,10 +148,20 @@ function Send-DiscordWebhook {
     if ([string]::IsNullOrWhiteSpace($Url)) { return }
 
     $json = ($Payload | ConvertTo-Json -Depth 12)
+    $jsonBytes = $null
+    try {
+        $jsonBytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    } catch {
+        $jsonBytes = $null
+    }
     $maxAttempts = 3
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         try {
-            Invoke-RestMethod -Method Post -Uri $Url -Body $json -ContentType 'application/json' -TimeoutSec 15 | Out-Null
+            if ($jsonBytes) {
+                Invoke-RestMethod -Method Post -Uri $Url -Body $jsonBytes -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
+            } else {
+                Invoke-RestMethod -Method Post -Uri $Url -Body $json -ContentType 'application/json; charset=utf-8' -TimeoutSec 15 | Out-Null
+            }
             return
         } catch {
             $statusCode = $null
@@ -170,12 +175,10 @@ function Send-DiscordWebhook {
                     $statusCode = [int]$resp.StatusCode
                 } catch { }
                 try {
-                    if ($statusCode -eq 400) {
-                        $stream = $resp.GetResponseStream()
-                        if ($stream) {
-                            $reader = New-Object System.IO.StreamReader($stream)
-                            $respBody = $reader.ReadToEnd()
-                        }
+                    $stream = $resp.GetResponseStream()
+                    if ($stream) {
+                        $reader = New-Object System.IO.StreamReader($stream)
+                        $respBody = $reader.ReadToEnd()
                     }
                 } catch { }
                 try {
@@ -195,8 +198,8 @@ function Send-DiscordWebhook {
             $suffix = ""
             if ($null -ne $statusCode) { $suffix = " (HTTP $statusCode)" }
             $msg = "Discord webhook falhou ({0}){1}: {2}" -f $Context, $suffix, $($_.Exception.Message)
-            if ($statusCode -eq 400 -and -not [string]::IsNullOrWhiteSpace($respBody)) {
-                $msg = $msg + " | Response: " + (ConvertTo-DiscordTextTruncated -Text $respBody -MaxLength 300)
+            if (-not [string]::IsNullOrWhiteSpace($respBody)) {
+                $msg = $msg + " | Response: " + (ConvertTo-DiscordTextTruncated -Text $respBody -MaxLength 400)
             }
             if ($Discord.FailBackupOnDiscordError) {
                 throw $msg
@@ -231,6 +234,11 @@ function Initialize-DiscordState {
     }
 }
 
+function Get-DiscordRuntimeSettings {
+    if ($script:Discord) { return $script:Discord }
+    return $null
+}
+
 function Set-DiscordStep {
     param([Parameter(Mandatory=$true)][string]$Step)
     $script:DiscordCurrentStep = $Step
@@ -243,7 +251,8 @@ function Update-DiscordHeartbeatState {
     param(
         [Parameter(Mandatory=$false)][string]$Step,
         [Parameter(Mandatory=$false)][string]$BackupLogPath,
-        [Parameter(Mandatory=$false)][string]$RcloneLogPath
+        [Parameter(Mandatory=$false)][string]$RcloneLogPath,
+        [Parameter(Mandatory=$false)][string]$ZipLogPath
     )
 
     $p = $null
@@ -304,6 +313,24 @@ function Update-DiscordHeartbeatState {
         } catch { }
     }
 
+    if ($ZipLogPath -and $Step) {
+        if (-not $state.ContainsKey('zipLogs') -or $null -eq $state['zipLogs']) {
+            $state['zipLogs'] = @{}
+        }
+        if (-not ($state['zipLogs'] -is [hashtable])) {
+            $tmp = @{}
+            try {
+                foreach ($prop in $state['zipLogs'].PSObject.Properties) {
+                    $tmp[$prop.Name] = $prop.Value
+                }
+            } catch { }
+            $state['zipLogs'] = $tmp
+        }
+        try {
+            $state['zipLogs'][$Step] = $ZipLogPath
+        } catch { }
+    }
+
     $state['updatedAt'] = (Get-Date).ToString('o')
     $json = $state | ConvertTo-Json -Depth 10
     $null = New-Item -ItemType Directory -Path (Split-Path -Parent $p) -Force -ErrorAction SilentlyContinue
@@ -331,12 +358,12 @@ function Send-DiscordHeartbeat {
     if ([string]::IsNullOrWhiteSpace($step)) { $step = 'init' }
 
     $fields = @(
-        @{ name = 'Etapa atual'; value = $step; inline = $true },
-        @{ name = 'Rodando há'; value = $elapsed; inline = $true },
-        @{ name = 'Log backup'; value = $BackupLogPath; inline = $false }
+        @{ name = 'Current step'; value = $step; inline = $true },
+        @{ name = 'Running for'; value = $elapsed; inline = $true },
+        @{ name = 'Backup log'; value = $BackupLogPath; inline = $false }
     )
     if (-not [string]::IsNullOrWhiteSpace($RcloneLogPath)) {
-        $fields += @(@{ name = 'Log rclone'; value = $RcloneLogPath; inline = $false })
+        $fields += @(@{ name = 'Rclone log'; value = $RcloneLogPath; inline = $false })
     }
 
     $embed = New-DiscordEmbed -Title 'Backup Minecraft - Heartbeat' -Color 'gray' -Description $null -Fields $fields
@@ -373,7 +400,7 @@ function Start-DiscordHeartbeatJob {
     if ($Discord.HeartbeatIntervalSeconds -le 0) { return $null }
     if ([string]::IsNullOrWhiteSpace($Discord.NormalUrl)) {
         $wl = Get-Command -Name Write-Log -ErrorAction SilentlyContinue
-        if ($wl) { Write-Log 'Heartbeat do Discord está habilitado, mas discord.webhooks.normalUrl está vazio. Heartbeat não será enviado.' 'WARN' }
+        if ($wl) { Write-Log 'Discord heartbeat is enabled, but discord.webhooks.normalUrl is empty. Heartbeat will not be sent.' 'WARN' }
         return $null
     }
 
@@ -382,7 +409,7 @@ function Start-DiscordHeartbeatJob {
     if ($pVar) { $p = [string]$pVar.Value }
     if ([string]::IsNullOrWhiteSpace($p)) {
         $wl = Get-Command -Name Write-Log -ErrorAction SilentlyContinue
-        if ($wl) { Write-Log 'Heartbeat do Discord não pôde iniciar: HeartbeatStatePath não foi definido.' 'WARN' }
+        if ($wl) { Write-Log 'Discord heartbeat could not start: HeartbeatStatePath was not set.' 'WARN' }
         return $null
     }
 
@@ -390,6 +417,7 @@ function Start-DiscordHeartbeatJob {
 
     $interval = [Math]::Max(1, [int]$Discord.HeartbeatIntervalSeconds)
     $url = [string]$Discord.NormalUrl
+    $alertUrl = [string]$Discord.AlertUrl
     $username = [string]$Discord.Username
     $avatarUrl = [string]$Discord.AvatarUrl
 
@@ -399,13 +427,50 @@ function Start-DiscordHeartbeatJob {
         Stop-DiscordHeartbeatJob -Job $existing
     }
 
-    $job = Start-Job -Name 'discordHeartbeat' -ArgumentList @($p, $interval, $url, $username, $avatarUrl, $BackupLogPath) -ScriptBlock {
-        param($statePath, $intervalSeconds, $url, $username, $avatarUrl, $defaultBackupLogPath)
+    $job = Start-Job -Name 'discordHeartbeat' -ArgumentList @($p, $interval, $url, $alertUrl, $username, $avatarUrl, $BackupLogPath) -ScriptBlock {
+        param($statePath, $intervalSeconds, $url, $alertUrl, $username, $avatarUrl, $defaultBackupLogPath)
 
         $ErrorActionPreference = 'Stop'
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         } catch { }
+
+        function ConvertTo-DiscordTextTruncatedLocal {
+            param(
+                [Parameter(Mandatory=$true)][AllowEmptyString()][string]$Text,
+                [Parameter(Mandatory=$true)][int]$MaxLength
+            )
+            if ($MaxLength -le 0) { return '' }
+            if ($null -eq $Text) { return '' }
+            $t = [string]$Text
+            $t = $t -replace "\r\n", "\n"
+            $t = $t -replace "\r", "\n"
+            $t = [regex]::Replace($t, "[\x00-\x08\x0B\x0C\x0E-\x1F]", '')
+            if ($t.Length -le $MaxLength) { return $t }
+            return ($t.Substring(0, [Math]::Max(0, $MaxLength - 3)) + '...')
+        }
+
+        function Get-DiscordHttpErrorDetailsLocal {
+            param([Parameter(Mandatory=$true)][object]$Exception)
+
+            $statusCode = $null
+            $body = $null
+            try {
+                if ($Exception -and $Exception.Response) {
+                    $resp = $Exception.Response
+                    try { $statusCode = [int]$resp.StatusCode } catch { }
+                    try {
+                        $stream = $resp.GetResponseStream()
+                        if ($stream) {
+                            $reader = New-Object System.IO.StreamReader($stream)
+                            $body = $reader.ReadToEnd()
+                        }
+                    } catch { }
+                }
+            } catch { }
+
+            return [pscustomobject]@{ StatusCode = $statusCode; Body = $body }
+        }
 
         $nextRegularSendAt = Get-Date
         $lastStepSeen = ''
@@ -424,6 +489,7 @@ function Start-DiscordHeartbeatJob {
                 $step = 'init'
                 $backupLogPath = $defaultBackupLogPath
                 $rcloneLogPath = ''
+                $zipLogPath = ''
                 $startAt = $null
                 $stepStartedAt = $null
 
@@ -446,6 +512,34 @@ function Start-DiscordHeartbeatJob {
                             }
                         } catch { }
                     }
+
+                    if ($state.zipLogs) {
+                        try {
+                            if ($state.zipLogs -is [hashtable]) {
+                                if ($state.zipLogs.ContainsKey($step)) { $zipLogPath = [string]$state.zipLogs[$step] }
+                            } else {
+                                $v = $state.zipLogs.$step
+                                if ($v) { $zipLogPath = [string]$v }
+                            }
+                        } catch { }
+                    }
+                }
+
+                $zipProgressText = $null
+                if ($step -eq 'zip' -and -not [string]::IsNullOrWhiteSpace($zipLogPath) -and (Test-Path $zipLogPath)) {
+                    try {
+                        $zlines = Get-Content -Path $zipLogPath -Tail 200 -ErrorAction Stop
+                        for ($i = $zlines.Count - 1; $i -ge 0; $i--) {
+                            $line = [string]$zlines[$i]
+                            if ($line -match '(^|\s)(\d{1,3})%($|\s)') {
+                                $pct = [int]$Matches[2]
+                                if ($pct -ge 0 -and $pct -le 100) {
+                                    $zipProgressText = "$pct%"
+                                    break
+                                }
+                            }
+                        }
+                    } catch { }
                 }
 
                 if ($step -ne $lastStepSeen) {
@@ -472,11 +566,13 @@ function Start-DiscordHeartbeatJob {
                     continue
                 }
 
-                $transferredLine = $null
+                $syncTransferredText = $null
+                $syncErrorsText = $null
                 if ($step -eq 'sync' -and -not [string]::IsNullOrWhiteSpace($rcloneLogPath) -and (Test-Path $rcloneLogPath)) {
                     try {
                         $lines = Get-Content -Path $rcloneLogPath -Tail 300 -ErrorAction Stop
-
+ 
+                        $bestIdx = $null
                         $best = $null
                         $bestScore = -1
                         for ($i = $lines.Count - 1; $i -ge 0; $i--) {
@@ -497,27 +593,49 @@ function Start-DiscordHeartbeatJob {
                             if ($score -gt $bestScore) {
                                 $bestScore = $score
                                 $best = $trim
+                                $bestIdx = $i
                             }
 
                             if ($bestScore -ge 9) { break }
                         }
-                        if ($best) {
-                            $transferredLine = $best
-                        }
 
-                        if (-not $transferredLine) {
+                        if (-not $best) {
                             for ($i = $lines.Count - 1; $i -ge 0; $i--) {
                                 $line = [string]$lines[$i]
                                 if ($line -match '\bETA\b') {
-                                    $transferredLine = $line.Trim()
+                                    $best = $line.Trim()
+                                    $bestIdx = $i
                                     break
                                 }
                             }
                         }
 
-                        if (-not $transferredLine) { $transferredLine = 'Transferred ainda não foi registrado no log' }
+                        $errorsLine = $null
+                        if ($null -ne $bestIdx) {
+                            for ($j = $bestIdx + 1; $j -lt $lines.Count; $j++) {
+                                $next = ([string]$lines[$j]).Trim()
+                                if ([string]::IsNullOrWhiteSpace($next)) { break }
+                                if ($next -match '^\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2}') { break }
+                                if ($next -match '^Errors:\s+') {
+                                    $errorsLine = $next
+                                    break
+                                }
+                            }
+                        }
+
+                        if ($best) {
+                            $syncTransferredText = $best
+                            if ($errorsLine) {
+                                $e = $errorsLine
+                                $e = $e -replace '\s*\(retrying may help\)\s*$', ''
+                                $syncErrorsText = $e
+                            }
+                        }
+
+                        if (-not $syncTransferredText) { $syncTransferredText = 'Transferred not yet recorded in the log' }
+
                     } catch {
-                        $transferredLine = 'Transferred ainda não foi registrado no log'
+                        $syncTransferredText = 'Transferred not yet recorded in the log'
                     }
                 }
 
@@ -528,17 +646,29 @@ function Start-DiscordHeartbeatJob {
                 }
 
                 $fields = @(
-                    @{ name = 'Etapa atual'; value = $step; inline = $true },
-                    @{ name = 'Rodando há'; value = $elapsed; inline = $true }
+                    @{ name = 'Current step'; value = $step; inline = $true },
+                    @{ name = 'Running for'; value = $elapsed; inline = $true }
                 )
                 if (-not [string]::IsNullOrWhiteSpace($backupLogPath)) {
-                    $fields += @(@{ name = 'Log backup'; value = $backupLogPath; inline = $false })
+                    $fields += @(@{ name = 'Backup log'; value = $backupLogPath; inline = $false })
                 }
                 if (-not [string]::IsNullOrWhiteSpace($rcloneLogPath)) {
-                    $fields += @(@{ name = 'Log rclone'; value = $rcloneLogPath; inline = $false })
+                    $fields += @(@{ name = 'Rclone log'; value = $rcloneLogPath; inline = $false })
                 }
-                if (-not [string]::IsNullOrWhiteSpace($transferredLine)) {
-                    $fields += @(@{ name = 'Sync'; value = $transferredLine; inline = $false })
+                if (-not [string]::IsNullOrWhiteSpace($zipProgressText)) {
+                    $fields += @(@{ name = 'Zip progress'; value = $zipProgressText; inline = $true })
+                }
+                if (-not [string]::IsNullOrWhiteSpace($uploadTransferredText)) {
+                    $fields += @(@{ name = 'Upload'; value = (ConvertTo-DiscordTextTruncatedLocal -Text $uploadTransferredText -MaxLength 1024); inline = $false })
+                }
+                if (-not [string]::IsNullOrWhiteSpace($uploadErrorsText)) {
+                    $fields += @(@{ name = 'Upload errors'; value = (ConvertTo-DiscordTextTruncatedLocal -Text $uploadErrorsText -MaxLength 1024); inline = $false })
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncTransferredText)) {
+                    $fields += @(@{ name = 'Sync'; value = (ConvertTo-DiscordTextTruncatedLocal -Text $syncTransferredText -MaxLength 1024); inline = $false })
+                }
+                if (-not [string]::IsNullOrWhiteSpace($syncErrorsText)) {
+                    $fields += @(@{ name = 'Errors'; value = (ConvertTo-DiscordTextTruncatedLocal -Text $syncErrorsText -MaxLength 1024); inline = $false })
                 }
 
                 $embed = @{ title = 'Backup Minecraft - Heartbeat'; color = 9807270; timestamp = (Get-Date).ToString('o'); fields = $fields }
@@ -553,8 +683,14 @@ function Start-DiscordHeartbeatJob {
                     $bp = $backupLogPath
                     if ([string]::IsNullOrWhiteSpace($bp)) { $bp = $defaultBackupLogPath }
                     if (-not [string]::IsNullOrWhiteSpace($bp)) {
-                        $line = "[{0}] [WARN] Falha ao enviar heartbeat do Discord (job): {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $($_.Exception.Message)
-                        Add-Content -Path $bp -Value $line
+                        $err = $_.Exception
+                        $details = Get-DiscordHttpErrorDetailsLocal -Exception $err
+                        $suffix = ''
+                        if ($details.StatusCode) { $suffix = " (HTTP $($details.StatusCode))" }
+                        $extra = ''
+                        if ($details.Body) { $extra = " | Response: " + (ConvertTo-DiscordTextTruncatedLocal -Text $details.Body -MaxLength 300) }
+                        $line = "[{0}] [WARN] Falha ao enviar heartbeat do Discord (job){1}: {2}{3}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $suffix, $err.Message, $extra
+                        Add-Content -Path $bp -Value $line -Encoding utf8
                     }
                 } catch { }
             }
@@ -596,6 +732,7 @@ function Send-DiscordStageEvent {
     if (-not $Discord.Enabled) { return }
 
     $url = if ($Alert) { $Discord.AlertUrl } else { $Discord.NormalUrl }
+    if ([string]::IsNullOrWhiteSpace($url) -and $Alert) { $url = $Discord.NormalUrl }
     if ([string]::IsNullOrWhiteSpace($url)) { return }
 
     $embed = New-DiscordEmbed -Title $Title -Color $Color -Description $Description -Fields $Fields

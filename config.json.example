@@ -51,9 +51,6 @@
       "enabled": true,
       "intervalSeconds": 300
     },
-    "failure": {
-      "includeLastLogLines": 10
-    },
     "behavior": {
       "failBackupOnDiscordError": false
     }

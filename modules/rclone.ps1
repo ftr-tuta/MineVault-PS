@@ -35,7 +35,7 @@ function Invoke-Rclone {
                 '--log-level', 'NOTICE',
                 '--log-file', $rcloneLog
             )
-            if ($ProgressStage -eq 'sync') {
+            if ($ProgressStage -in @('sync','upload')) {
                 $globalFlags = @(
                     '--stats', '30s',
                     '--stats-log-level', 'NOTICE'
@@ -56,7 +56,7 @@ function Invoke-Rclone {
             if (-not [string]::IsNullOrWhiteSpace($rcloneLog)) {
                 $extra = " Consulte o log do rclone em: $rcloneLog"
             }
-            Stop-Backup -ExitCode $ExitCodes.Rclone -Message "Falha ao executar: $pretty (exit code $code). Causas comuns: arquivo mudando durante o sync (ex.: 'corrupted on transfer: sizes differ' ao copiar .mca), rede instável/intermitente, limites da host, permissões, ou remote/caminho incorreto no rclone config.$extra"
+            Stop-Backup -ExitCode $ExitCodes.Rclone -Message "Falha ao executar: $pretty (exit code $code). Causas comuns: arquivo mudando durante o sync (ex.: 'corrupted on transfer: sizes differ' ao copiar .mca), rede instavel/intermitente, limites da host, permissoes, ou remote/caminho incorreto no rclone config.$extra"
         }
     }
 }

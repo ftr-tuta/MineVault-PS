@@ -1,4 +1,4 @@
-# --- CONFIGURAÇÕES ---
+# --- CONFIGURACOES ---
 param(
     [switch]$IgnoreLock
 )
@@ -12,6 +12,18 @@ if ($__isWindowsVar) {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+try {
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch { }
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::InputEncoding = [System.Text.Encoding]::UTF8
+} catch { }
+try {
+    if (-not $PSDefaultParameterValues) { $PSDefaultParameterValues = @{} }
+    $PSDefaultParameterValues['*:Encoding'] = 'utf8'
+} catch { }
+
 . (Join-Path $PSScriptRoot 'modules\utils.ps1')
 . (Join-Path $PSScriptRoot 'modules\config.ps1')
 . (Join-Path $PSScriptRoot 'modules\logging.ps1')
@@ -23,18 +35,18 @@ $ConfigPath = Join-Path $PSScriptRoot 'config.json'
 $Config = Get-Config -Path $ConfigPath
 
 if (-not $Config.source -or [string]::IsNullOrWhiteSpace($Config.source.remote)) {
-    throw "Config inválido: 'source.remote' é obrigatório."
+    throw "Config invalido: 'source.remote' e obrigatorio."
 }
 if (-not $Config.work -or [string]::IsNullOrWhiteSpace($Config.work.tempDir)) {
-    throw "Config inválido: 'work.tempDir' é obrigatório."
+    throw "Config invalido: 'work.tempDir' e obrigatorio."
 }
 if (-not $Config.destination -or [string]::IsNullOrWhiteSpace($Config.destination.provider)) {
-    throw "Config inválido: 'destination.provider' é obrigatório (b2|gdrive|s3)."
+    throw "Config invalido: 'destination.provider' e obrigatorio (b2|gdrive|s3)."
 }
 
 $DestinationProvider = ($Config.destination.provider.ToString().Trim().ToLowerInvariant())
 if ($DestinationProvider -notin @('b2','gdrive','s3')) {
-    throw "Config inválido: destination.provider='$DestinationProvider' não é suportado (b2|gdrive|s3)."
+    throw "Config invalido: destination.provider='$DestinationProvider' nao e suportado (b2|gdrive|s3)."
 }
 
 $RemoteSFTP = ConvertTo-RcloneRemote -Remote $Config.source.remote
@@ -43,22 +55,22 @@ $SyncDirName = if ($Config.work.syncDirName) { $Config.work.syncDirName } else {
 $LocalArchiveDir = if ($Config.work.localArchiveDir) { $Config.work.localArchiveDir } else { (Join-Path $PastaTemp 'archives') }
 
 if (-not $Config.retention) {
-    throw "Config inválido: 'retention' é obrigatório."
+    throw "Config invalido: 'retention' e obrigatorio."
 }
 
 $RetentionLocalKeep = 0
 if ($null -ne $Config.retention.localKeep) { $RetentionLocalKeep = [int]$Config.retention.localKeep }
 
 if ($null -eq $Config.retention.remoteKeep) {
-    throw "Config inválido: 'retention.remoteKeep' é obrigatório (0 para desativar upload)."
+    throw "Config invalido: 'retention.remoteKeep' e obrigatorio (0 para desativar upload)."
 }
 $RetentionRemoteKeep = [int]$Config.retention.remoteKeep
 
 if ($RetentionLocalKeep -lt 0 -or $RetentionRemoteKeep -lt 0) {
-    throw "Config inválido: retention.localKeep/remoteKeep não podem ser negativos."
+    throw "Config invalido: retention.localKeep/remoteKeep nao podem ser negativos."
 }
 if ($RetentionLocalKeep -eq 0 -and $RetentionRemoteKeep -eq 0) {
-    throw "Config inválido: retention.localKeep=0 e retention.remoteKeep=0 resultariam em nenhum backup salvo (nem local, nem remoto)."
+    throw "Config invalido: retention.localKeep=0 e retention.remoteKeep=0 resultariam em nenhum backup salvo (nem local, nem remoto)."
 }
 
 $ZipCompression = if ($Config.zip -and $null -ne $Config.zip.compression) { [int]$Config.zip.compression } else { 2 }
@@ -103,9 +115,9 @@ function Get-DestinationFolder {
 
     switch ($Provider) {
         'b2' {
-            if (-not $Cfg.destination.b2) { throw "Config inválido: 'destination.b2' é obrigatório quando provider=b2." }
-            if ([string]::IsNullOrWhiteSpace($Cfg.destination.b2.remote)) { throw "Config inválido: 'destination.b2.remote' é obrigatório." }
-            if ([string]::IsNullOrWhiteSpace($Cfg.destination.b2.bucket)) { throw "Config inválido: 'destination.b2.bucket' é obrigatório (necessário para keys restritas a um bucket)." }
+            if (-not $Cfg.destination.b2) { throw "Config invalido: 'destination.b2' e obrigatorio quando provider=b2." }
+            if ([string]::IsNullOrWhiteSpace($Cfg.destination.b2.remote)) { throw "Config invalido: 'destination.b2.remote' e obrigatorio." }
+            if ([string]::IsNullOrWhiteSpace($Cfg.destination.b2.bucket)) { throw "Config invalido: 'destination.b2.bucket' e obrigatorio (necessario para keys restritas a um bucket)." }
             $remote = ConvertTo-RcloneRemote -Remote $Cfg.destination.b2.remote
             $bucket = ConvertTo-RcloneSubPath -SubPath $Cfg.destination.b2.bucket
             $prefix = $null
@@ -114,15 +126,15 @@ function Get-DestinationFolder {
             return (Join-RcloneRemotePath -Remote $remote -SubPath $sub)
         }
         'gdrive' {
-            if (-not $Cfg.destination.gdrive) { throw "Config inválido: 'destination.gdrive' é obrigatório quando provider=gdrive." }
-            if ([string]::IsNullOrWhiteSpace($Cfg.destination.gdrive.remote)) { throw "Config inválido: 'destination.gdrive.remote' é obrigatório." }
+            if (-not $Cfg.destination.gdrive) { throw "Config invalido: 'destination.gdrive' e obrigatorio quando provider=gdrive." }
+            if ([string]::IsNullOrWhiteSpace($Cfg.destination.gdrive.remote)) { throw "Config invalido: 'destination.gdrive.remote' e obrigatorio." }
             $remote = ConvertTo-RcloneRemote -Remote $Cfg.destination.gdrive.remote
             $folder = if ($Cfg.destination.gdrive.folder) { $Cfg.destination.gdrive.folder } else { '' }
             return (Join-RcloneRemotePath -Remote $remote -SubPath $folder)
         }
         's3' {
-            if (-not $Cfg.destination.s3) { throw "Config inválido: 'destination.s3' é obrigatório quando provider=s3." }
-            if ([string]::IsNullOrWhiteSpace($Cfg.destination.s3.remote)) { throw "Config inválido: 'destination.s3.remote' é obrigatório." }
+            if (-not $Cfg.destination.s3) { throw "Config invalido: 'destination.s3' e obrigatorio quando provider=s3." }
+            if ([string]::IsNullOrWhiteSpace($Cfg.destination.s3.remote)) { throw "Config invalido: 'destination.s3.remote' e obrigatorio." }
             $remote = ConvertTo-RcloneRemote -Remote $Cfg.destination.s3.remote
             $bucket = $null
             if ($Cfg.destination.s3.bucket) { $bucket = ConvertTo-RcloneSubPath -SubPath $Cfg.destination.s3.bucket }
@@ -135,7 +147,7 @@ function Get-DestinationFolder {
             return (Join-RcloneRemotePath -Remote $remote -SubPath $prefix)
         }
         default {
-            throw "Provider não suportado: $Provider"
+            throw "Provider nao suportado: $Provider"
         }
     }
 }
@@ -184,9 +196,9 @@ try {
     $LockPath = Join-Path $PastaTemp 'backup.lock'
     if (Test-Path $LockPath) {
         if ($IgnoreLock) {
-            Write-Log "Lock encontrado em '$LockPath' mas IgnoreLock foi informado. Continuando mesmo assim (modo forçado)." 'WARN'
+            Write-Log "Lock encontrado em '$LockPath' mas IgnoreLock foi informado. Continuando mesmo assim (modo forcado)." 'WARN'
         } else {
-            Stop-Backup -ExitCode $ExitCodes.Lock -Message "Execução bloqueada: lock encontrado em '$LockPath'. Isso normalmente significa que já existe um backup em andamento ou que a última execução foi interrompida. Rodar duas cópias ao mesmo tempo pode gerar ZIP incompleto e rotação apagando backups indevidamente. Se você tiver certeza que não há backup rodando, remova o arquivo lock manualmente e execute novamente."
+            Stop-Backup -ExitCode $ExitCodes.Lock -Message "Execucao bloqueada: lock encontrado em '$LockPath'. Isso normalmente significa que ja existe um backup em andamento ou que a ultima execucao foi interrompida. Rodar duas copias ao mesmo tempo pode gerar ZIP incompleto e rotacao apagando backups indevidamente. Se voce tiver certeza que nao ha backup rodando, remova o arquivo lock manualmente e execute novamente."
         }
     }
     if (-not (Test-Path $LockPath)) {
@@ -198,24 +210,48 @@ try {
     Write-Log "Origem: $RemoteSFTP" 'INFO'
     Write-Log "Destino ($DestinationProvider): $DestinationFolder" 'INFO'
     Write-Log "ZIP local: $ZipWorkPath" 'INFO'
-    Write-Log "Retenção local (archives): $RetentionLocalKeep" 'INFO'
-    Write-Log "Retenção destino: $RetentionRemoteKeep" 'INFO'
-    Write-Log ("Validação do ZIP (7z t): {0}" -f ($(if ($SkipZipTest) { 'DESATIVADA' } else { 'ATIVADA' }))) 'INFO'
+    Write-Log "Retencao local (archives): $RetentionLocalKeep" 'INFO'
+    Write-Log "Retencao destino: $RetentionRemoteKeep" 'INFO'
+    Write-Log ("Validacao do ZIP (7z t): {0}" -f ($(if ($SkipZipTest) { 'DESATIVADA' } else { 'ATIVADA' }))) 'INFO'
 
     if ($DiscordSettings.Enabled -and $DiscordSettings.NotifyStart) {
         $fields = @(
             @{ name = 'Origem'; value = $RemoteSFTP; inline = $true },
-            @{ name = 'Destino'; value = $DestinationFolder; inline = $true },
             @{ name = 'Host'; value = $env:COMPUTERNAME; inline = $true },
             @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
             @{ name = 'Log backup'; value = $LogPath; inline = $false }
         )
-        $desc = "Iniciando backup. Vou baixar as alterações do servidor (SFTP) para uma pasta local, gerar um ZIP com timestamp, enviar o ZIP para o destino e aplicar retenção (remover backups antigos). Em caso de erro, consulte os logs."
+        if ($RetentionRemoteKeep -gt 0) {
+            $fields = @(
+                @{ name = 'Origem'; value = $RemoteSFTP; inline = $true },
+                @{ name = 'Destino'; value = $DestinationFolder; inline = $true },
+                @{ name = 'Host'; value = $env:COMPUTERNAME; inline = $true },
+                @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+        } else {
+            $fields += @(
+                @{ name = 'Upload'; value = 'DISABLED (retention.remoteKeep=0)'; inline = $false },
+                @{ name = 'ZIP path'; value = $ZipWorkPath; inline = $false }
+            )
+        }
+        $desc = "Iniciando backup. Vou baixar as alteracoes do servidor (SFTP) para uma pasta local, gerar um ZIP com timestamp, enviar o ZIP para o destino e aplicar retencao (remover backups antigos). Em caso de erro, consulte os logs."
+        if ($RetentionRemoteKeep -le 0) {
+            $desc = "Iniciando backup. Vou baixar as alteracoes do servidor (SFTP) para uma pasta local e gerar um ZIP com timestamp. O upload esta desativado (retention.remoteKeep=0). Em caso de erro, consulte os logs."
+        }
         Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'start' -Title 'Backup Minecraft iniciado' -Color 'blue' -Description $desc -Fields $fields
     }
 
     Write-Host "Sincronizando arquivos (apenas novidades)..."
     Set-DiscordStep -Step 'sync'
+    if ($DiscordSettings.Enabled) {
+        $fields = @(
+            @{ name = 'Etapa'; value = 'sync'; inline = $true },
+            @{ name = 'Origem'; value = $RemoteSFTP; inline = $false },
+            @{ name = 'Log backup'; value = $LogPath; inline = $false }
+        )
+        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync iniciada' -Color 'gray' -Description 'Iniciando sincronizacao via rclone (SFTP -> local).' -Fields $fields
+    }
     $syncArgs = @(
         'sync', $RemoteSFTP, $SyncDir,
         '--retries', '5',
@@ -240,16 +276,26 @@ try {
             @{ name = 'Log backup'; value = $LogPath; inline = $false },
             @{ name = 'Log rclone'; value = $syncLog; inline = $false }
         )
-        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync concluída' -Color 'gray' -Description 'Arquivos atualizados: servidor (SFTP) -> pasta local. Se algo ficar estranho (arquivo faltando/erro de rede), veja o log do rclone.' -Fields $fields
+        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync concluida' -Color 'gray' -Description 'Arquivos atualizados: servidor (SFTP) -> pasta local. Se algo ficar estranho (arquivo faltando/erro de rede), veja o log do rclone.' -Fields $fields
     }
 
     Write-Host "Compactando arquivos em $NomeArquivo..."
     Set-DiscordStep -Step 'zip'
+    if ($DiscordSettings.Enabled) {
+        $fields = @(
+            @{ name = 'Etapa'; value = 'zip'; inline = $true },
+            @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+            @{ name = 'Log backup'; value = $LogPath; inline = $false }
+        )
+        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa zip iniciada' -Color 'gray' -Description 'Iniciando compactacao (7-Zip).' -Fields $fields
+    }
     if ($KeepLocalZip) {
         if (!(Test-Path $LocalArchiveDir)) { New-Item -ItemType Directory -Path $LocalArchiveDir | Out-Null }
     }
     if (Test-Path $ZipWorkPath) { Remove-Item $ZipWorkPath -Force }
-    Invoke-7Zip -Args @('a','-tzip',("-mx={0}" -f $ZipCompression),$ZipWorkPath,(Join-Path $SyncDir '*')) -ProgressStage 'zip'
+    $zipLog = Join-Path $LogDir ("zip_{0}.log" -f $Data)
+    try { Update-DiscordHeartbeatState -Step 'zip' -ZipLogPath $zipLog } catch { }
+    Invoke-7Zip -Args @('a','-tzip',("-mx={0}" -f $ZipCompression),$ZipWorkPath,(Join-Path $SyncDir '*')) -ProgressStage 'zip' -LogPath $zipLog
 
     if ($DiscordSettings.Enabled) {
         $fields = @(
@@ -257,16 +303,32 @@ try {
             @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
             @{ name = 'Log backup'; value = $LogPath; inline = $false }
         )
-        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa zip concluída' -Color 'gray' -Description 'ZIP gerado a partir da cópia local (artefato único para restore). Se houver corrupção/erro, consulte o log do backup.' -Fields $fields
+        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa zip concluida' -Color 'gray' -Description 'ZIP gerado a partir da copia local (artefato unico para restore). Se houver corrupcao/erro, consulte o log do backup.' -Fields $fields
     }
 
     Write-Host "Validando integridade do ZIP..."
     if (-not $SkipZipTest) {
         Set-DiscordStep -Step 'zip_test'
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'zip_test'; inline = $true },
+                @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa zip_test iniciada' -Color 'gray' -Description 'Iniciando validacao do ZIP (7z t).' -Fields $fields
+        }
 
         Invoke-7Zip -Args @('t', $ZipWorkPath) -ProgressStage 'zip_test'
     } else {
-        Write-Host "Validação do ZIP desativada (zip.skipTest=true)." -ForegroundColor Yellow
+        Write-Host "Validacao do ZIP desativada (zip.skipTest=true)." -ForegroundColor Yellow
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'zip_test'; inline = $true },
+                @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa zip_test pulada' -Color 'gray' -Description 'Validacao do ZIP esta desativada (zip.skipTest=true).' -Fields $fields
+        }
     }
 
     if ($RetentionLocalKeep -gt 0) {
@@ -276,9 +338,19 @@ try {
                 Where-Object { $_.Name -match '^backup_minecraft_.*\.zip$' } |
                 Sort-Object -Property LastWriteTime -Descending
         )
+        $LocalTotal = $LocalBackupsOrdenados.Count
         $LocalParaDeletar = @($LocalBackupsOrdenados | Select-Object -Skip $RetentionLocalKeep)
         foreach ($f in $LocalParaDeletar) {
             Write-Host "Deletando backup local antigo: $($f.Name)" -ForegroundColor Red
+            if ($DiscordSettings.Enabled) {
+                $fields = @(
+                    @{ name = 'Retencao local'; value = "$LocalTotal encontrados / limite $RetentionLocalKeep"; inline = $false },
+                    @{ name = 'Deletando'; value = $f.Name; inline = $false },
+                    @{ name = 'Pasta'; value = $LocalArchiveDir; inline = $false },
+                    @{ name = 'Log backup'; value = $LogPath; inline = $false }
+                )
+                Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Retencao local: deletando ZIP antigo' -Color 'gray' -Description $null -Fields $fields
+            }
             Remove-Item -Path $f.FullName -Force -ErrorAction SilentlyContinue
         }
     }
@@ -286,6 +358,15 @@ try {
     if ($RetentionRemoteKeep -gt 0) {
         Write-Host "Enviando para o destino..."
         Set-DiscordStep -Step 'upload'
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'upload'; inline = $true },
+                @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+                @{ name = 'Destino'; value = $DestinationFolder; inline = $false },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa upload iniciada' -Color 'gray' -Description 'Iniciando upload via rclone.' -Fields $fields
+        }
         if ($DestinationProvider -ne 'b2') {
             $mkdirLog = Join-Path $LogDir ("rclone_upload_mkdir_{0}.log" -f $Data)
             try { Update-DiscordHeartbeatState -Step 'upload' -RcloneLogPath $mkdirLog } catch { }
@@ -307,12 +388,21 @@ try {
                 @{ name = 'Log backup'; value = $LogPath; inline = $false },
                 @{ name = 'Log rclone'; value = $rcloneUploadLog; inline = $false }
             )
-            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa upload concluída' -Color 'gray' -Description 'ZIP enviado para o destino configurado. Se houver falha de credenciais/permissão, veja o log do rclone.' -Fields $fields
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa upload concluida' -Color 'gray' -Description 'ZIP enviado para o destino configurado. Se houver falha de credenciais/permissao, veja o log do rclone.' -Fields $fields
         }
     } else {
         Write-Host "Upload para destino desativado (retention.remoteKeep=0)." -ForegroundColor Yellow
         if (-not $KeepLocalZip) {
-            Write-Host "Como retention.localKeep=0 e o upload está desativado, o ZIP será mantido em: $ZipWorkPath" -ForegroundColor Yellow
+            Write-Host "Como retention.localKeep=0 e o upload esta desativado, o ZIP sera mantido em: $ZipWorkPath" -ForegroundColor Yellow
+        }
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'upload'; inline = $true },
+                @{ name = 'Upload'; value = 'DISABLED (retention.remoteKeep=0)'; inline = $false },
+                @{ name = 'ZIP path'; value = $ZipWorkPath; inline = $false },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa upload pulada' -Color 'gray' -Description 'Upload para destino esta desativado.' -Fields $fields
         }
     }
 
@@ -320,11 +410,19 @@ try {
         Write-Host "Verificando backups antigos no destino para manter apenas os $RetentionRemoteKeep mais recentes..." -ForegroundColor Yellow
 
         Set-DiscordStep -Step 'rotate'
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'rotate'; inline = $true },
+                @{ name = 'Destino'; value = $DestinationFolder; inline = $false },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa rotate iniciada' -Color 'gray' -Description 'Iniciando retencao no destino (listar e deletar backups antigos).' -Fields $fields
+        }
 
         $lsl = & rclone lsl $DestinationFolder
         $code = $LASTEXITCODE
         if ($code -ne 0) {
-            Stop-Backup -ExitCode $ExitCodes.Rclone -Message "Falha ao listar backups no destino para rotação (rclone lsl exit code $code). A rotação não pode continuar com segurança. Verifique permissões e configuração do remote no rclone."
+            Stop-Backup -ExitCode $ExitCodes.Rclone -Message "Falha ao listar backups no destino para rotacao (rclone lsl exit code $code). A rotacao nao pode continuar com seguranca. Verifique permissoes e configuracao do remote no rclone."
         }
         $parsed = foreach ($line in $lsl) {
             if ($line -match '^\s*(\d+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(.+)$') {
@@ -343,13 +441,24 @@ try {
         }
         $RemoteBackupsOrdenados = @($parsed | Sort-Object -Property When -Descending)
 
+        $RemoteTotal = $RemoteBackupsOrdenados.Count
+
         $RemoteParaDeletar = @($RemoteBackupsOrdenados | Select-Object -Skip $RetentionRemoteKeep)
         if ($RemoteParaDeletar.Count -gt 0) {
             foreach ($b in $RemoteParaDeletar) {
                 Write-Host "Deletando backup antigo no destino: $($b.Name)" -ForegroundColor Red
+                if ($DiscordSettings.Enabled) {
+                    $fields = @(
+                        @{ name = 'Retencao destino'; value = "$RemoteTotal encontrados / limite $RetentionRemoteKeep"; inline = $false },
+                        @{ name = 'Deletando'; value = $b.Name; inline = $false },
+                        @{ name = 'Destino'; value = $DestinationFolder; inline = $false },
+                        @{ name = 'Log backup'; value = $LogPath; inline = $false }
+                    )
+                    Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Retencao destino: deletando ZIP antigo' -Color 'gray' -Description $null -Fields $fields
+                }
                 Invoke-Rclone -MaxAttempts 3 -RcloneArgs @('deletefile', ("{0}/{1}" -f $DestinationFolder.TrimEnd('/'), $b.Name))
             }
-            Write-Host "Limpeza do destino concluída!" -ForegroundColor Green
+            Write-Host "Limpeza do destino concluida!" -ForegroundColor Green
         } else {
             Write-Host "Nenhum backup antigo para deletar no destino. Total atual: $($RemoteBackupsOrdenados.Count)." -ForegroundColor Green
         }
@@ -360,12 +469,12 @@ try {
                 @{ name = 'Mantidos'; value = "$RetentionRemoteKeep"; inline = $true },
                 @{ name = 'Log backup'; value = $LogPath; inline = $false }
             )
-            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa rotate concluída' -Color 'gray' -Description 'Retenção aplicada no destino: backups antigos removidos (quando necessário).' -Fields $fields
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa rotate concluida' -Color 'gray' -Description 'Retencao aplicada no destino: backups antigos removidos (quando necessario).' -Fields $fields
         }
     }
 
-    Write-Host "Processo de backup concluído com sucesso!" -ForegroundColor Green
-    Write-Log 'Processo concluído com sucesso.' 'INFO'
+    Write-Host "Processo de backup concluido com sucesso!" -ForegroundColor Green
+    Write-Log 'Processo concluido com sucesso.' 'INFO'
 
     if ($DiscordSettings.Enabled -and $DiscordSettings.NotifySuccess) {
         $dur = ''
@@ -378,18 +487,64 @@ try {
         try {
             if (Test-Path $ZipWorkPath) {
                 $len = (Get-Item $ZipWorkPath).Length
-                $sizeText = ('{0:N0} bytes' -f $len)
+                $sizeText = ("{0} ({1:N0} bytes)" -f (ConvertTo-HumanBytes -Bytes ([int64]$len)), ([int64]$len))
             }
         } catch { }
 
-        $fields = @(
-            @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
-            @{ name = 'Duração'; value = $dur; inline = $true },
-            @{ name = 'Tamanho'; value = $sizeText; inline = $true },
-            @{ name = 'Destino'; value = $DestinationFolder; inline = $false },
-            @{ name = 'Log backup'; value = $LogPath; inline = $false }
-        )
-        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'success' -Title 'Backup Minecraft concluído' -Color 'green' -Description $null -Fields $fields
+        $freeTextShort = ''
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($ZipWorkPath)) {
+                $drives = @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)
+                $best = $null
+                $bestLen = -1
+
+                foreach ($d in $drives) {
+                    $root = [string]$d.Root
+                    if ([string]::IsNullOrWhiteSpace($root)) { continue }
+                    if ($ZipWorkPath.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+                        if ($root.Length -gt $bestLen) {
+                            $bestLen = $root.Length
+                            $best = $d
+                        }
+                    }
+                }
+                if ($best -and $best.Free -ge 0) {
+                    $freeTextShort = ("{0} free" -f (ConvertTo-HumanBytes -Bytes ([int64]$best.Free)))
+                }
+            }
+        } catch { }
+
+        if ($RetentionRemoteKeep -gt 0) {
+            $fields = @(
+                @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+                @{ name = 'Duracao'; value = $dur; inline = $true },
+                @{ name = 'Tamanho'; value = $sizeText; inline = $true },
+                @{ name = 'Destino'; value = $DestinationFolder; inline = $false },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'success' -Title 'Backup Minecraft concluido' -Color 'green' -Description $null -Fields $fields
+        } else {
+            $fields = @(
+                @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+                @{ name = 'Duracao'; value = $dur; inline = $true },
+                @{ name = 'Tamanho'; value = $sizeText; inline = $true },
+                @{ name = 'ZIP path'; value = $ZipWorkPath; inline = $false },
+                @{ name = 'Upload'; value = 'DISABLED (retention.remoteKeep=0)'; inline = $false },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            if (-not [string]::IsNullOrWhiteSpace($freeTextShort)) {
+                $fields = @(
+                    @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+                    @{ name = 'Duracao'; value = $dur; inline = $true },
+                    @{ name = 'Tamanho'; value = $sizeText; inline = $true },
+                    @{ name = 'Free space'; value = $freeTextShort; inline = $true },
+                    @{ name = 'ZIP path'; value = $ZipWorkPath; inline = $false },
+                    @{ name = 'Upload'; value = 'DISABLED (retention.remoteKeep=0)'; inline = $false },
+                    @{ name = 'Log backup'; value = $LogPath; inline = $false }
+                )
+            }
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'success' -Title 'Backup Minecraft concluido (upload disabled)' -Color 'green' -Description $null -Fields $fields
+        }
     }
 } catch {
     $code = $ExitCodes.Unknown
@@ -404,7 +559,7 @@ try {
     $script:ExitCode = $code
 
     if ($cancelled) {
-        Write-Log "Backup interrompido pelo usuário (Ctrl+C)." 'ERROR'
+        Write-Log "Backup interrompido pelo usuario (Ctrl+C)." 'ERROR'
     } else {
         Write-Log "Falha no backup (exit code $code): $($_.Exception.Message)" 'ERROR'
     }
@@ -415,8 +570,6 @@ try {
         if (-not $cancelled) {
             $mention = Get-DiscordMentionContentOnFailure -Discord $DiscordSettings
         }
-        $tail = Get-LastLogLines -Path $LogPath -Tail $DiscordSettings.FailureIncludeLastLogLines
-        $tail = ConvertTo-DiscordTextTruncated -Text $tail -MaxLength 900
 
         $dur = ''
         if ($script:BackupStartAt) {
@@ -426,26 +579,29 @@ try {
 
         $fields = @(
             @{ name = 'Exit code'; value = "$code"; inline = $true },
-            @{ name = 'Duração'; value = $dur; inline = $true },
+            @{ name = 'Duracao'; value = $dur; inline = $true },
             @{ name = 'Log backup'; value = $LogPath; inline = $false }
         )
+
         $rlp = Get-Variable -Name RcloneLogPaths -Scope Script -ErrorAction SilentlyContinue
         if ($rlp -and $rlp.Value -and $rlp.Value.ContainsKey($script:DiscordCurrentStep)) {
             $fields += @(@{ name = 'Log rclone'; value = [string]$rlp.Value[$script:DiscordCurrentStep]; inline = $false })
         }
-        if (-not [string]::IsNullOrWhiteSpace($tail)) {
-            $fields += @(@{ name = 'Últimas linhas do log'; value = $tail; inline = $false })
-        }
 
         $title = if ($cancelled) { 'Backup Minecraft interrompido' } else { 'Backup Minecraft falhou' }
-        $descText = if ($cancelled) { 'Execução interrompida pelo usuário (Ctrl+C) ou encerramento do terminal.' } else { $($_.Exception.Message) }
+        $descText = if ($cancelled) { 'Execucao interrompida pelo usuario (Ctrl+C) ou encerramento do terminal.' } else { $($_.Exception.Message) }
+
         $embed = New-DiscordEmbed -Title $title -Color 'red' -Description (ConvertTo-DiscordTextTruncated -Text $descText -MaxLength 1000) -Fields $fields
         $payload = @{ embeds = @($embed) }
+
         if (-not [string]::IsNullOrWhiteSpace($mention)) { $payload.content = $mention }
         if (-not [string]::IsNullOrWhiteSpace($DiscordSettings.Username)) { $payload.username = $DiscordSettings.Username }
         if (-not [string]::IsNullOrWhiteSpace($DiscordSettings.AvatarUrl)) { $payload.avatar_url = $DiscordSettings.AvatarUrl }
+
         $ctx = if ($cancelled) { 'cancelled' } else { 'failure' }
-        Send-DiscordWebhook -Url $DiscordSettings.AlertUrl -Payload $payload -Discord $DiscordSettings -Context $ctx
+        $url = $DiscordSettings.AlertUrl
+        if ([string]::IsNullOrWhiteSpace($url)) { $url = $DiscordSettings.NormalUrl }
+        Send-DiscordWebhook -Url $url -Payload $payload -Discord $DiscordSettings -Context $ctx
     }
 } finally {
     Stop-DiscordHeartbeatTimer -Timer $heartbeatTimer

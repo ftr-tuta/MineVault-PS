@@ -148,11 +148,46 @@ Isso é útil para:
 - Receber aviso quando o backup **inicia**.
 - Acompanhar a **etapa atual** com um heartbeat periódico (sem spam no terminal).
 - Confirmar **sucesso**.
-- Ser alertado em **falha** (com exit code e últimas linhas do log).
+- Ser alertado em **falha** (com exit code e caminhos dos logs).
 
 ### Exemplo (como fica no Discord)
 
-![Exemplo de mensagens no Discord](img_examples/discord_webhook_example.png)
+#### Heartbeat durante o sync (mundo mudando / gerando chunks)
+
+Quando o heartbeat mostrar que existem **erros durante a sincronizacao**, normalmente significa que o mundo esta mudando na host (arquivos sendo criados/modificados enquanto o backup copia).
+
+O total pode chegar em **15 tentativas** no sync:
+
+- **5 tentativas internas do rclone** (parametro `--retries 5`).
+- **3 tentativas do comando `rclone sync`** (retry do script).
+
+Os **avisos no Discord** sao enviados apenas nos casos das **3 tentativas do script** (ex.: `1/3`, `2/3`, `3/3`).
+
+**Exemplo 1:**
+
+![Heartbeat (sync) - exemplo 1](img_examples/discord_heartbeat_example_1_sync_while_generating_chunks.png)
+
+**Exemplo 2:**
+
+![Heartbeat (sync) - exemplo 2](img_examples/discord_heartbeat_example_2_sync_while_generating_chunks.png)
+
+#### Aviso de retry e falha (sync)
+
+![Retry e falha (sync)](img_examples/discord_retry_and_fail_example_sync_while_generating_chunks.png)
+
+#### Exemplo quando o upload esta desativado (retention.remoteKeep=0)
+
+<p align="center">
+  <img src="img_examples/discord_starting_backup_remote_disabled.png" width="650" />
+</p>
+
+<p align="center">
+  <img src="img_examples/discord_sync_and_ziping_example.png" width="650" />
+</p>
+
+<p align="center">
+  <img src="img_examples/discord_success_upload_disabled.png" width="650" />
+</p>
 
 ### Como funciona
 
@@ -220,9 +255,6 @@ Exemplo mais completo (ainda apenas o bloco `discord`):
       "enabled": true,
       "intervalSeconds": 300
     },
-    "failure": {
-      "includeLastLogLines": 10
-    },
     "behavior": {
       "failBackupOnDiscordError": false
     }
@@ -250,10 +282,6 @@ Exemplo mais completo (ainda apenas o bloco `discord`):
   - `enabled`: envia periodicamente um "heartbeat" indicando qual etapa está rodando e há quanto tempo.
   - `intervalSeconds`: intervalo do heartbeat em segundos (mínimo 30s).
   - O heartbeat inclui os caminhos para o `log` do backup e, quando disponível, o `log` do `rclone` da etapa atual.
-
-- `discord.failure.includeLastLogLines`
-  - Número de linhas do final do log incluídas na notificação de falha.
-  - `0` desativa.
 
 - `discord.behavior.failBackupOnDiscordError`
   - `false` (padrão): se o Discord falhar, o backup continua e só registra um `WARN`.
