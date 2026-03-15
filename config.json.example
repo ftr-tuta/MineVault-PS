@@ -1,74 +1,182 @@
 {
+  // NOTE: This is a commented example file (JSONC). JSON does not support comments.
+  // When copying to config.json, remove all lines that start with //.
+
+  // SOURCE (choose ONE):
+  // - SFTP mode: set source.remote and keep source.localPath empty
+  // - Local mode: set source.localPath and keep source.remote empty (or ignore it)
   "source": {
+    // OPTIONAL (SFTP mode). rclone remote name for SFTP (example: sftp_bedhost:)
+    // If empty, you must set source.localPath.
     "remote": "sftp_bedhost:",
+
+    // OPTIONAL (local mode). Local folder path (example: C:/minecraft/server)
+    // If set, the sync stage is skipped and the zip is created from this folder.
+    "localPath": "",
+
+    // OPTIONAL. Patterns to ignore.
+    // - In SFTP mode: applied to rclone sync via --exclude
+    // - In local mode: applied to 7-Zip via -xr!<pattern>
+    // If empty/omitted: no exclusions.
     "exclude": [
       "logs/**",
       "cache/**",
       "plugins/spark/tmp/**"
     ]
   },
+
+  // WORK (required): local folders used by the script
   "work": {
+
+    // REQUIRED. Working directory.
+    // Impact:
+    // - logs will be written to <tempDir>/logs
+    // - in SFTP mode, the sync folder is <tempDir>/<syncDirName>
+    // If empty: script fails at startup.
     "tempDir": "G:/BackupsMC",
+
+    // OPTIONAL. Sync folder name inside work.tempDir (SFTP mode only).
+    // If empty/omitted: defaults to "sync_dir".
     "syncDirName": "sync_dir",
+
+    // OPTIONAL. Where to store local zip archives when retention.localKeep > 0.
+    // If empty/omitted: defaults to <tempDir>/archives.
     "localArchiveDir": "G:/BackupsMC/archives"
   },
+
+  // RETENTION: how many backups to keep
   "retention": {
+
+    // OPTIONAL. Number of zip files to keep locally.
+    // 0 means do not keep local archives.
+    // If > 0: the script stores zips in work.localArchiveDir and deletes old ones.
     "localKeep": 1,
+
+    // REQUIRED. Number of zip files to keep in the destination.
+    // 0 disables upload and rotate (destination retention).
+    // If > 0: the script uploads and then deletes old backups in the destination.
     "remoteKeep": 7
   },
+
+  // ZIP (7-Zip settings)
   "zip": {
+
+    // OPTIONAL. 7-Zip compression level (-mx=0..9).
+    // If empty/omitted: defaults to 2.
     "compression": 2,
+
+    // OPTIONAL. If true, skip zip validation (7z t).
+    // If empty/omitted: defaults to false.
     "skipTest": false
   },
+
+  // DEPENDENCIES
   "dependencies": {
     "sevenZip": {
+
+      // OPTIONAL (Windows). Path to 7z.exe.
+      // If empty/omitted: defaults to C:/Program Files/7-Zip/7z.exe.
       "windowsPath": "C:/Program Files/7-Zip/7z.exe",
+
+      // OPTIONAL (Linux). 7-Zip command.
+      // If empty/omitted: defaults to 7z.
       "linuxCommand": "7z"
     }
   },
+
+  // DISCORD (optional)
   "discord": {
+
+    // OPTIONAL. If false, Discord is disabled.
     "enabled": false,
+
+    // OPTIONAL. Webhook URLs.
+    // Impact:
+    // - If enabled=true and normalUrl is empty: sending will fail.
     "webhooks": {
+
+      // OPTIONAL. Webhook used for normal messages (start/progress/success).
       "normalUrl": "",
+
+      // OPTIONAL. Webhook used for alert messages (failure).
       "alertUrl": ""
     },
+
+    // OPTIONAL. Overrides webhook identity.
     "identity": {
+
+      // OPTIONAL. If empty, Discord uses webhook default.
       "username": "Backup Minecraft",
+
+      // OPTIONAL. If empty, no custom avatar.
       "avatarUrl": ""
     },
+
+    // OPTIONAL. Toggle message types.
     "notifications": {
       "start": { "enabled": true },
       "success": { "enabled": true },
       "failure": { "enabled": true }
     },
+
+    // OPTIONAL. Mentions used on failure.
     "mentions": {
       "onFailure": {
+
+        // OPTIONAL. If true, add @here on failure.
         "here": true,
+
+        // OPTIONAL. If set, mention that role id on failure.
         "roleId": ""
       }
     },
+
+    // OPTIONAL. Heartbeat messages with periodic progress.
     "heartbeat": {
+
+      // OPTIONAL. If true, enable heartbeat.
       "enabled": true,
+
+      // OPTIONAL. Heartbeat interval seconds.
       "intervalSeconds": 300
     },
+
+    // OPTIONAL. Behavior on Discord errors.
     "behavior": {
+
+      // OPTIONAL. If true, any Discord error fails the backup.
       "failBackupOnDiscordError": false
     }
   },
+
+  // DESTINATION (required)
   "destination": {
+
+    // REQUIRED. One of: b2, gdrive, s3.
     "provider": "b2",
 
+    // Used when provider=b2:
+    // - remote: REQUIRED
+    // - bucket: REQUIRED
+    // - prefix: OPTIONAL
     "b2": {
       "remote": "backblaze:",
       "bucket": "",
       "prefix": "Backups/Minecraft"
     },
 
+    // Used when provider=gdrive:
+    // - remote: REQUIRED
+    // - folder: OPTIONAL
     "gdrive": {
       "remote": "gdrive:",
       "folder": "Backups/Minecraft"
     },
 
+    // Used when provider=s3:
+    // - remote: REQUIRED
+    // - bucket: OPTIONAL
+    // - prefix: OPTIONAL
     "s3": {
       "remote": "s3remote:",
       "bucket": "",

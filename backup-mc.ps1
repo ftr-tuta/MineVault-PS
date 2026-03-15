@@ -34,8 +34,11 @@ try {
 $ConfigPath = Join-Path $PSScriptRoot 'config.json'
 $Config = Get-Config -Path $ConfigPath
 
-if (-not $Config.source -or [string]::IsNullOrWhiteSpace($Config.source.remote)) {
-    throw "Config invalido: 'source.remote' e obrigatorio."
+if (-not $Config.source) {
+    throw "Config invalido: 'source' e obrigatorio."
+}
+if ([string]::IsNullOrWhiteSpace($Config.source.remote) -and [string]::IsNullOrWhiteSpace($Config.source.localPath)) {
+    throw "Config invalido: 'source.remote' (SFTP) ou 'source.localPath' (local) e obrigatorio."
 }
 if (-not $Config.work -or [string]::IsNullOrWhiteSpace($Config.work.tempDir)) {
     throw "Config invalido: 'work.tempDir' e obrigatorio."
@@ -49,7 +52,16 @@ if ($DestinationProvider -notin @('b2','gdrive','s3')) {
     throw "Config invalido: destination.provider='$DestinationProvider' nao e suportado (b2|gdrive|s3)."
 }
 
-$RemoteSFTP = ConvertTo-RcloneRemote -Remote $Config.source.remote
+$SourceIsLocal = $false
+$LocalSourcePath = $null
+$RemoteSFTP = $null
+if (-not [string]::IsNullOrWhiteSpace($Config.source.localPath)) {
+    $SourceIsLocal = $true
+    $LocalSourcePath = $Config.source.localPath
+} else {
+    $RemoteSFTP = ConvertTo-RcloneRemote -Remote $Config.source.remote
+}
+$SourceText = if ($SourceIsLocal) { $LocalSourcePath } else { $RemoteSFTP }
 $PastaTemp = $Config.work.tempDir
 $SyncDirName = if ($Config.work.syncDirName) { $Config.work.syncDirName } else { 'sync_dir' }
 $LocalArchiveDir = if ($Config.work.localArchiveDir) { $Config.work.localArchiveDir } else { (Join-Path $PastaTemp 'archives') }
@@ -153,6 +165,56 @@ function Get-DestinationFolder {
 }
 $DestinationFolder = Get-DestinationFolder -Cfg $Config -Provider $DestinationProvider
 
+function ConvertTo-HumanBytes {
+    param([Parameter(Mandatory=$true)][Int64]$Bytes)
+
+    if ($Bytes -lt 0) { return "$Bytes bytes" }
+    $units = @('bytes','KiB','MiB','GiB','TiB','PiB')
+    [double]$value = [double]$Bytes
+    $u = 0
+    while ($value -ge 1024 -and $u -lt ($units.Count - 1)) {
+        $value = $value / 1024
+        $u++
+    }
+    if ($u -eq 0) { return ("{0:N0} {1}" -f $value, $units[$u]) }
+    return ("{0:N2} {1}" -f $value, $units[$u])
+}
+
+function Get-FreeSpaceTextShortForPath {
+    param([Parameter(Mandatory=$true)][string]$Path)
+
+    try {
+        $root = [System.IO.Path]::GetPathRoot($Path)
+        if (-not [string]::IsNullOrWhiteSpace($root)) {
+            $di = New-Object System.IO.DriveInfo($root)
+            if ($di -and $di.IsReady) {
+                return ("{0} free" -f (ConvertTo-HumanBytes -Bytes ([int64]$di.AvailableFreeSpace)))
+            }
+        }
+    } catch { }
+
+    try {
+        $drives = @(Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue)
+        $best = $null
+        $bestLen = -1
+        foreach ($d in $drives) {
+            $dRoot = [string]$d.Root
+            if ([string]::IsNullOrWhiteSpace($dRoot)) { continue }
+            if ($Path.StartsWith($dRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                if ($dRoot.Length -gt $bestLen) {
+                    $bestLen = $dRoot.Length
+                    $best = $d
+                }
+            }
+        }
+        if ($best -and $best.Free -ge 0) {
+            return ("{0} free" -f (ConvertTo-HumanBytes -Bytes ([int64]$best.Free)))
+        }
+    } catch { }
+
+    return ''
+}
+
 $script:ExitCode = 0
 $script:CreatedLock = $false
 
@@ -167,7 +229,11 @@ $ExitCodes = @{
 }
 
 # --- PROCESSO ---
-Write-Host "Iniciando backup via SFTP..." -ForegroundColor Cyan
+if ($SourceIsLocal) {
+    Write-Host "Iniciando backup via source local (sem sync)..." -ForegroundColor Cyan
+} else {
+    Write-Host "Iniciando backup via SFTP..." -ForegroundColor Cyan
+}
 
 $DiscordSettings = Get-DiscordSettings -Cfg $Config
 Initialize-DiscordState -Discord $DiscordSettings
@@ -191,7 +257,9 @@ try {
 
     if (!(Test-Path $PastaTemp)) { New-Item -ItemType Directory -Path $PastaTemp | Out-Null }
     $SyncDir = Join-Path $PastaTemp $SyncDirName
-    if (!(Test-Path $SyncDir)) { New-Item -ItemType Directory -Path $SyncDir | Out-Null }
+    if (-not $SourceIsLocal) {
+        if (!(Test-Path $SyncDir)) { New-Item -ItemType Directory -Path $SyncDir | Out-Null }
+    }
 
     $LockPath = Join-Path $PastaTemp 'backup.lock'
     if (Test-Path $LockPath) {
@@ -207,7 +275,7 @@ try {
     }
 
     Write-Log "Log: $LogPath" 'INFO'
-    Write-Log "Origem: $RemoteSFTP" 'INFO'
+    Write-Log "Origem: $SourceText" 'INFO'
     Write-Log "Destino ($DestinationProvider): $DestinationFolder" 'INFO'
     Write-Log "ZIP local: $ZipWorkPath" 'INFO'
     Write-Log "Retencao local (archives): $RetentionLocalKeep" 'INFO'
@@ -216,14 +284,14 @@ try {
 
     if ($DiscordSettings.Enabled -and $DiscordSettings.NotifyStart) {
         $fields = @(
-            @{ name = 'Origem'; value = $RemoteSFTP; inline = $true },
+            @{ name = 'Origem'; value = $SourceText; inline = $true },
             @{ name = 'Host'; value = $env:COMPUTERNAME; inline = $true },
             @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
             @{ name = 'Log backup'; value = $LogPath; inline = $false }
         )
         if ($RetentionRemoteKeep -gt 0) {
             $fields = @(
-                @{ name = 'Origem'; value = $RemoteSFTP; inline = $true },
+                @{ name = 'Origem'; value = $SourceText; inline = $true },
                 @{ name = 'Destino'; value = $DestinationFolder; inline = $true },
                 @{ name = 'Host'; value = $env:COMPUTERNAME; inline = $true },
                 @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
@@ -236,47 +304,66 @@ try {
             )
         }
         $desc = "Iniciando backup. Vou baixar as alteracoes do servidor (SFTP) para uma pasta local, gerar um ZIP com timestamp, enviar o ZIP para o destino e aplicar retencao (remover backups antigos). Em caso de erro, consulte os logs."
+        if ($SourceIsLocal) {
+            $desc = "Iniciando backup. Vou gerar um ZIP com timestamp a partir da pasta local do servidor (sem sync). Em caso de erro, consulte os logs."
+        }
         if ($RetentionRemoteKeep -le 0) {
-            $desc = "Iniciando backup. Vou baixar as alteracoes do servidor (SFTP) para uma pasta local e gerar um ZIP com timestamp. O upload esta desativado (retention.remoteKeep=0). Em caso de erro, consulte os logs."
+            if ($SourceIsLocal) {
+                $desc = "Iniciando backup. Vou gerar um ZIP com timestamp a partir da pasta local do servidor (sem sync). O upload esta desativado (retention.remoteKeep=0). Em caso de erro, consulte os logs."
+            } else {
+                $desc = "Iniciando backup. Vou baixar as alteracoes do servidor (SFTP) para uma pasta local e gerar um ZIP com timestamp. O upload esta desativado (retention.remoteKeep=0). Em caso de erro, consulte os logs."
+            }
         }
         Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'start' -Title 'Backup Minecraft iniciado' -Color 'blue' -Description $desc -Fields $fields
     }
 
-    Write-Host "Sincronizando arquivos (apenas novidades)..."
-    Set-DiscordStep -Step 'sync'
-    if ($DiscordSettings.Enabled) {
-        $fields = @(
-            @{ name = 'Etapa'; value = 'sync'; inline = $true },
-            @{ name = 'Origem'; value = $RemoteSFTP; inline = $false },
-            @{ name = 'Log backup'; value = $LogPath; inline = $false }
+    if ($SourceIsLocal) {
+        Write-Host "Sync pulado: source.localPath configurado."
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'sync'; inline = $true },
+                @{ name = 'Origem'; value = $SourceText; inline = $false },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync pulada' -Color 'gray' -Description 'Source local configurado. Nao vou rodar rclone sync.' -Fields $fields
+        }
+    } else {
+        Write-Host "Sincronizando arquivos (apenas novidades)..."
+        Set-DiscordStep -Step 'sync'
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'sync'; inline = $true },
+                @{ name = 'Origem'; value = $SourceText; inline = $false },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync iniciada' -Color 'gray' -Description 'Iniciando sincronizacao via rclone (SFTP -> local).' -Fields $fields
+        }
+        $syncArgs = @(
+            'sync', $RemoteSFTP, $SyncDir,
+            '--retries', '5',
+            '--low-level-retries', '10',
+            '--retries-sleep', '10s',
+            '--sftp-concurrency', '1',
+            '--sftp-chunk-size', '32k'
         )
-        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync iniciada' -Color 'gray' -Description 'Iniciando sincronizacao via rclone (SFTP -> local).' -Fields $fields
-    }
-    $syncArgs = @(
-        'sync', $RemoteSFTP, $SyncDir,
-        '--retries', '5',
-        '--low-level-retries', '10',
-        '--retries-sleep', '10s',
-        '--sftp-concurrency', '1',
-        '--sftp-chunk-size', '32k'
-    )
-    if ($Config.source.exclude) {
-        foreach ($ex in $Config.source.exclude) {
-            if (-not [string]::IsNullOrWhiteSpace($ex)) {
-                $syncArgs += @('--exclude', $ex)
+        if ($Config.source.exclude) {
+            foreach ($ex in $Config.source.exclude) {
+                if (-not [string]::IsNullOrWhiteSpace($ex)) {
+                    $syncArgs += @('--exclude', $ex)
+                }
             }
         }
-    }
-    $syncLog = Join-Path $LogDir ("rclone_sync_{0}.log" -f $Data)
-    try { Update-DiscordHeartbeatState -Step 'sync' -RcloneLogPath $syncLog } catch { }
-    Invoke-Rclone -MaxAttempts 3 -RcloneArgs $syncArgs -ProgressStage 'sync' -LogPath $syncLog
-    if ($DiscordSettings.Enabled) {
-        $fields = @(
-            @{ name = 'Etapa'; value = 'sync'; inline = $true },
-            @{ name = 'Log backup'; value = $LogPath; inline = $false },
-            @{ name = 'Log rclone'; value = $syncLog; inline = $false }
-        )
-        Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync concluida' -Color 'gray' -Description 'Arquivos atualizados: servidor (SFTP) -> pasta local. Se algo ficar estranho (arquivo faltando/erro de rede), veja o log do rclone.' -Fields $fields
+        $syncLog = Join-Path $LogDir ("rclone_sync_{0}.log" -f $Data)
+        try { Update-DiscordHeartbeatState -Step 'sync' -RcloneLogPath $syncLog } catch { }
+        Invoke-Rclone -MaxAttempts 3 -RcloneArgs $syncArgs -ProgressStage 'sync' -LogPath $syncLog
+        if ($DiscordSettings.Enabled) {
+            $fields = @(
+                @{ name = 'Etapa'; value = 'sync'; inline = $true },
+                @{ name = 'Log backup'; value = $LogPath; inline = $false },
+                @{ name = 'Log rclone'; value = $syncLog; inline = $false }
+            )
+            Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa sync concluida' -Color 'gray' -Description 'Arquivos atualizados: servidor (SFTP) -> pasta local. Se algo ficar estranho (arquivo faltando/erro de rede), veja o log do rclone.' -Fields $fields
+        }
     }
 
     Write-Host "Compactando arquivos em $NomeArquivo..."
@@ -295,12 +382,50 @@ try {
     if (Test-Path $ZipWorkPath) { Remove-Item $ZipWorkPath -Force }
     $zipLog = Join-Path $LogDir ("zip_{0}.log" -f $Data)
     try { Update-DiscordHeartbeatState -Step 'zip' -ZipLogPath $zipLog } catch { }
-    Invoke-7Zip -Args @('a','-tzip',("-mx={0}" -f $ZipCompression),$ZipWorkPath,(Join-Path $SyncDir '*')) -ProgressStage 'zip' -LogPath $zipLog
+    $zipSourcePath = if ($SourceIsLocal) { $LocalSourcePath } else { $SyncDir }
+    $zipArgs = @('a','-tzip',("-mx={0}" -f $ZipCompression),$ZipWorkPath,(Join-Path $zipSourcePath '*'))
+    if ($Config.source.exclude) {
+        foreach ($ex in $Config.source.exclude) {
+            if (-not [string]::IsNullOrWhiteSpace($ex)) {
+                $zipArgs += ("-xr!{0}" -f $ex)
+            }
+        }
+    }
+    Invoke-7Zip -Args $zipArgs -ProgressStage 'zip' -LogPath $zipLog
 
     if ($DiscordSettings.Enabled) {
+        $zipSizeText = ''
+        try {
+            if (Test-Path $zipLog) {
+                $tail = @(Get-Content -LiteralPath $zipLog -Tail 200 -ErrorAction SilentlyContinue)
+                $best = $null
+                foreach ($line in $tail) {
+                    if ($line -match 'Archive\s+size:\s*\d+\s*bytes\s*\(([^)]+)\)') {
+                        $best = $Matches[1]
+                    }
+                }
+                if (-not [string]::IsNullOrWhiteSpace($best)) {
+                    $zipSizeText = $best
+                }
+            }
+        } catch { }
+
+        if ([string]::IsNullOrWhiteSpace($zipSizeText)) {
+            try {
+                if (Test-Path $ZipWorkPath) {
+                    $len = (Get-Item $ZipWorkPath).Length
+                    $zipSizeText = (ConvertTo-HumanBytes -Bytes ([int64]$len))
+                }
+            } catch { }
+        }
+
+        $zipFreeTextShort = Get-FreeSpaceTextShortForPath -Path $ZipWorkPath
+
         $fields = @(
             @{ name = 'Etapa'; value = 'zip'; inline = $true },
-            @{ name = 'Arquivo'; value = $NomeArquivo; inline = $true },
+            @{ name = 'Arquivo'; value = $ZipWorkPath; inline = $false },
+            @{ name = 'Tamanho'; value = $zipSizeText; inline = $true },
+            @{ name = 'Free space'; value = $zipFreeTextShort; inline = $true },
             @{ name = 'Log backup'; value = $LogPath; inline = $false }
         )
         Send-DiscordStageEvent -Discord $DiscordSettings -Kind 'stage' -Title 'Etapa zip concluida' -Color 'gray' -Description 'ZIP gerado a partir da copia local (artefato unico para restore). Se houver corrupcao/erro, consulte o log do backup.' -Fields $fields

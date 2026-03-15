@@ -75,45 +75,68 @@ O `config.json.example` contém todas as chaves suportadas. Resumo:
 
 #### `source`
 
-- `source.remote` (obrigatório)
+- `source.remote` (SFTP)
   - Nome do remote SFTP no `rclone` (ex.: `sftp_bedhost:`).
+  - Se vazio: so e aceito se `source.localPath` estiver preenchido.
+  - Se preenchido: o backup roda em modo SFTP e executa a etapa `sync` (rclone) para trazer os arquivos para a pasta local de trabalho.
+- `source.localPath` (local)
+  - Caminho local da pasta do servidor (ex.: `C:/minecraft/server`).
+  - Se estiver configurado, a etapa `sync` e pulada e o ZIP e gerado diretamente dessa pasta.
+  - Se vazio: o script usa `source.remote` (SFTP).
 - `source.exclude` (opcional)
-  - Lista de padrões para ignorar no sync (ex.: `logs/**`).
+  - Lista de padroes para ignorar no sync/zip (ex.: `logs/**`).
+  - Se vazio/ausente: nada e excluido.
+  - Se preenchido:
+    - No modo SFTP: vira `--exclude` no rclone.
+    - No modo local: vira `-xr!<padrao>` no 7-Zip.
 
 #### `work`
 
 - `work.tempDir` (obrigatório)
   - Pasta de trabalho (vai conter `sync_dir`, `logs`, e opcionalmente `archives`).
+  - Se vazio: o script falha no inicio (config invalido).
 - `work.syncDirName` (opcional)
   - Nome do diretório local sincronizado (padrão: `sync_dir`).
+  - Se vazio/ausente: usa `sync_dir`.
 - `work.localArchiveDir` (opcional)
   - Onde salvar os `.zip` quando `retention.localKeep > 0`.
+  - Se vazio/ausente: usa `<work.tempDir>/archives`.
 
 #### `retention`
 
 - `retention.localKeep` (opcional)
   - Quantos `.zip` manter localmente (0 = não manter).
+  - Se 0: o ZIP pode ser criado fora de `archives` e, se o upload estiver ativado, ele pode ser movido para o destino (nao fica copia local).
+  - Se > 0: o ZIP e salvo em `work.localArchiveDir` e o script deleta ZIPs antigos localmente ate manter somente esse limite.
 - `retention.remoteKeep` (obrigatório)
   - Quantos `.zip` manter no destino (0 = desativa upload/rotação no destino).
+  - Se 0: etapa `upload` e pulada e etapa `rotate` nao roda.
+  - Se > 0: faz upload e depois lista/deleta backups antigos no destino para manter somente esse limite.
 
 #### `zip`
 
 - `zip.compression` (opcional)
   - Nível `-mx` do 7-Zip (0 a 9).
+  - Se vazio/ausente: usa `2`.
 - `zip.skipTest` (opcional)
   - `true` para não rodar `7z t`.
+  - Se vazio/ausente: usa `false` (faz validacao).
 
 #### `dependencies`
 
 - `dependencies.sevenZip.windowsPath` (opcional)
   - Caminho do `7z.exe` no Windows.
+  - Se vazio/ausente: usa `C:\Program Files\7-Zip\7z.exe`.
 - `dependencies.sevenZip.linuxCommand` (opcional)
   - Comando do 7-Zip no Linux (ex.: `7z`).
+  - Se vazio/ausente: usa `7z`.
 
 #### `destination`
 
 - `destination.provider` (obrigatório)
   - `b2` | `gdrive` | `s3`.
+  - Se vazio: o script falha no inicio (config invalido).
+  - Impacto: define quais chaves abaixo sao obrigatorias e como montar o path do destino no rclone.
 
 Quando `provider=b2`:
 
@@ -121,10 +144,22 @@ Quando `provider=b2`:
 - `destination.b2.bucket` (obrigatório)
 - `destination.b2.prefix` (opcional)
 
+Observacoes:
+
+- `destination.b2.bucket` vazio: script falha (obrigatorio).
+- `destination.b2.prefix` vazio/ausente: destino vira somente `<remote>:<bucket>`.
+- `destination.b2.prefix` preenchido: destino vira `<remote>:<bucket>/<prefix>`.
+
 Quando `provider=gdrive`:
 
 - `destination.gdrive.remote` (obrigatório)
 - `destination.gdrive.folder` (opcional)
+
+Observacoes:
+
+- `destination.gdrive.remote` vazio: script falha.
+- `destination.gdrive.folder` vazio/ausente: destino vira somente `<remote>:`.
+- `destination.gdrive.folder` preenchido: destino vira `<remote>:<folder>`.
 
 Quando `provider=s3`:
 
@@ -132,9 +167,43 @@ Quando `provider=s3`:
 - `destination.s3.bucket` (opcional)
 - `destination.s3.prefix` (opcional)
 
+Observacoes:
+
+- `destination.s3.remote` vazio: script falha.
+- `destination.s3.bucket` vazio/ausente:
+  - destino vira `<remote>:` ou `<remote>:<prefix>` (se prefix for preenchido).
+- `destination.s3.bucket` preenchido:
+  - destino vira `<remote>:<bucket>` ou `<remote>:<bucket>/<prefix>` (se prefix for preenchido).
+
 #### `discord`
 
 Seção opcional para enviar notificações via webhook do Discord.
+
+- `discord.enabled`
+  - `true` habilita Discord.
+  - `false` desabilita tudo (nao envia webhook).
+- `discord.webhooks.normalUrl`
+  - Se vazio e `discord.enabled=true`: o script vai falhar ao tentar enviar (na pratica, nao faz sentido habilitar sem URL).
+- `discord.webhooks.alertUrl`
+  - Se vazio: falhas nao terao canal separado (dependendo da configuracao do modulo, pode tentar cair no normal).
+- `discord.identity.username`
+  - Se vazio/ausente: Discord usa o padrao do webhook.
+- `discord.identity.avatarUrl`
+  - Se vazio/ausente: sem avatar custom.
+- `discord.notifications.start|success|failure.enabled`
+  - Se `false`: nao envia esse tipo de mensagem.
+- `discord.mentions.onFailure.here`
+  - Se `true`: adiciona `@here` nas falhas.
+  - Se `false`: nao menciona.
+- `discord.mentions.onFailure.roleId`
+  - Se preenchido: menciona o cargo na falha (requer permissao do cargo no canal).
+- `discord.heartbeat.enabled`
+  - Se `true`: manda heartbeat periodico com progresso.
+- `discord.heartbeat.intervalSeconds`
+  - Se vazio/ausente: usa o padrao do script/modulo.
+- `discord.behavior.failBackupOnDiscordError`
+  - Se `true`: erro no webhook faz o backup falhar.
+  - Se `false`: backup continua mesmo se Discord falhar.
 
 </details>
 
@@ -187,6 +256,10 @@ Os **avisos no Discord** sao enviados apenas nos casos das **3 tentativas do scr
 
 <p align="center">
   <img src="img_examples/discord_success_upload_disabled.png" width="650" />
+</p>
+
+<p align="center">
+  <img src="img_examples/discord_success_upload_disabled2.png" width="650" />
 </p>
 
 ### Como funciona
